@@ -8,14 +8,16 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
-
     _devNumber = 6;
     maxCountGraphics_ = 255;
     ui->setupUi(this);
 
+    wColorScale = new ColorScale();
+    ui->layoutColorScale->addWidget(wColorScale);
+
     WidthGraph = ui->lineWidth->text().toUInt();
     shiftGraph = ui->lineShift->text().toUInt();
-    vecCntGraph_.resize(maxCountGraphics_+1);
+    listShift_.resize(_devNumber);
 
     /* Set ToolBars */
     ui->toolBar->toggleViewAction()->setEnabled(false);
@@ -27,6 +29,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(openAct, &QAction::triggered, this, &MainWindow::openFile);
     ui->toolBar->addAction(openAct);
 
+    const QIcon graphicIcon = QIcon::fromTheme("graph-open", QIcon(":/image/graphic.png"));
+    QAction *graphicAct = new QAction(graphicIcon, tr("&Graphic..."), this);
+    graphicAct->setShortcuts(QKeySequence::Open);
+    graphicAct->setStatusTip(tr("Настройка графика"));
+    connect(graphicAct, &QAction::triggered, this, &MainWindow::graphicSettings);
+    ui->toolBar->addAction(graphicAct);
+
     const QIcon settingsIcon = QIcon::fromTheme("settings-ico", QIcon(":/image/settings.ico"));
     QAction *setgtingsAct = new QAction(settingsIcon, tr("&Settings..."), this);
     //openAct->setShortcuts(QKeySequence::Open);
@@ -34,6 +43,30 @@ MainWindow::MainWindow(QWidget *parent)
     setgtingsAct->setStatusTip(tr("Настройка устройств"));
     connect(setgtingsAct, &QAction::triggered, this, &MainWindow::settingsSlot);
     ui->toolBar->addAction(setgtingsAct);
+
+    const QIcon startIcon = QIcon::fromTheme("start-ico", QIcon(":/image/start.png"));
+    QAction *startAct = new QAction(startIcon, tr("&Play..."), this);
+    //openAct->setShortcuts(QKeySequence::Open);
+    startAct->setShortcut(QKeySequence(tr("CTRL+P")));  //start
+    startAct->setStatusTip(tr("Начать сбор данных"));
+    connect(startAct, &QAction::triggered, this, &MainWindow::startSlot);
+    ui->toolBar->addAction(startAct);
+
+    const QIcon stopIcon = QIcon::fromTheme("stop-ico", QIcon(":/image/stop.png"));
+    QAction *stopAct = new QAction(stopIcon, tr("&Stop..."), this);
+    //openAct->setShortcuts(QKeySequence::Open);
+    //startAct->setShortcut(QKeySequence(tr("CTRL+P")));  //start
+    stopAct->setStatusTip(tr("Остановить сбор данных"));
+    connect(stopAct, &QAction::triggered, this, &MainWindow::stopSlot);
+    ui->toolBar->addAction(stopAct);
+
+    const QIcon searchIcon = QIcon::fromTheme("start-ico", QIcon(":/image/search.png"));
+    QAction *searchAct = new QAction(searchIcon, tr("&Search..."), this);
+    //openAct->setShortcuts(QKeySequence::Open);
+    //searchAct->setShortcut(QKeySequence(tr("CTRL+P")));  //start
+    searchAct->setStatusTip(tr("Готовность устройств"));
+    connect(searchAct, &QAction::triggered, this, &MainWindow::searchSlot);
+    ui->toolBar->addAction(searchAct);
 
     setRadButId();
     connect(ui->buttonGroup, SIGNAL(buttonClicked(int)), this, SLOT(onGroupButtonClicked(int)));
@@ -50,31 +83,41 @@ MainWindow::MainWindow(QWidget *parent)
     _listGraph.append(ui->customPlot5);
     _listGraph.append(ui->customPlot6);
 
+    pen.setWidth(6);
+
+    for (int cnt_cstPlot=0; cnt_cstPlot <  _listGraph.size(); cnt_cstPlot++){
+        listColorGraph.append(QList <graphColor*>());
+        for(uint32_t cnt = 0; cnt < maxCountGraphics_; cnt++){
+            listColorGraph[cnt_cstPlot].append(new graphColor());
+            listColorGraph[cnt_cstPlot].at(cnt)->color = wColorScale->getColor((double)cnt/maxCountGraphics_);
+            listColorGraph[cnt_cstPlot].at(cnt)->graph = ui->customPlot1->addGraph();
+            pen.setColor(listColorGraph[cnt_cstPlot].at(cnt)->color);
+            listColorGraph[cnt_cstPlot].at(cnt)->graph->setPen(pen);
+            listColorGraph[cnt_cstPlot].at(cnt)->graph->setLineStyle(QCPGraph::lsNone);              //точки не соединять
+            listColorGraph[cnt_cstPlot].at(cnt)->graph->setScatterStyle(QCPScatterStyle::ssCircle);  //круглая точка
+        }
+    }
+
     initGraphics();
-    //test_plot();
-
-
     /* Init list measure */
     initListMeasure();
+    //test_plot();
     /* TCP server */
     _server = new server();
+    _server->initUDP();
     connect(_server, SIGNAL(newData(pointsDevices*)), this, SLOT(dataProccesing(pointsDevices*)));
-
-    ui->layoutColorScale->addWidget(new ColorScale());
-
+    connect(this, SIGNAL(cmdEspALL(cmdESP, uint, uint)), _server, SLOT(cmdEspAllSlot(cmdESP, uint, uint)));
+    fileUI = new fileForm();
+    //fileUI->show();
+    connect(fileUI, SIGNAL(chooseMeasureModules(pointsMeasure_*)), this , SLOT(getSettingMeasure(pointsMeasure_*)));
+    //connect(this, SIGNAL(setFileName(QString)), SLOT(getFileName(QString)));
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
-    for(int i=0; i < _devNumber; i++){
-       delete _listADC1.at(i);
-       delete _listADC2.at(i);
-       delete _listAccX.at(i);
-       delete _listAccY.at(i);
-       delete _listAccZ.at(i);
-       delete _listTsens.at(i);
-    }
+    for(int i=0; i < _devNumber; i++)
+       delete _listData.at(i);
 }
 
 void MainWindow::projMessage(QString textMessage)
@@ -83,75 +126,534 @@ void MainWindow::projMessage(QString textMessage)
     //ui->textEdit->append(textMessage);
 }
 
+/* Проверяем график на совпадение, если -1, то новый график строить */
+int MainWindow::checkGraphics(const uint8_t devNum, QVector<double> *data, double accuracy)
+{
+    uint8_t cntGraph = 0;
+    double val = 0;
+    bool graphBreak = false;
 
+    qDebug() << "check Graphics " << _listGraph[devNum]->graphCount();
+    if(_listGraph[devNum]->graphCount() == 1)
+        return -1;
+    /* Перебираем графики cntGraph и их значения сравниваем */
+    for(cntGraph=0; cntGraph < _listGraph[devNum]->graphCount(); cntGraph++){
+        graphBreak = false;
+        for(uint cnt=0; cnt < WidthGraph; cnt++){
+            val = _listGraph[devNum]->graph(cntGraph)->data()->at(cnt)->value;
+            //Если число больше точности, к новому графику переходим
+            if(std::abs(val - data->at(cnt)) > accuracy){
+                graphBreak = true;
+                break;
+            }
+        }
+        if(graphBreak == false){
+            qDebug() << "Sovpali graphics " << cntGraph;
+            return cntGraph;
+        }
+    }
+   return -1;
+}
+
+/* Проверяем точки графиков на совпадение */
+void MainWindow::checkGraphicsV2(const uint8_t devNum, QVector<double> *data,const double accuracy)
+{
+    uint8_t cntGraph = 0;
+    double val = 0;
+    //addColorGraphPoint(devNum, accuracy);
+    int current_cnt_graphics = _listGraph[devNum]->graphCount() - maxCountGraphics_;
+    qDebug() << "check Graphics " << current_cnt_graphics;
+    if(current_cnt_graphics == 1)
+        return;
+    /* Перебираем графики cntGraph и их значения сравниваем */
+    for(uint cnt=0; cnt < WidthGraph; cnt++){
+        for(cntGraph=maxCountGraphics_; cntGraph < current_cnt_graphics; cntGraph++){
+            val = _listGraph[devNum]->graph(cntGraph)->data()->at(cnt)->value;
+            if(std::abs(val - data->at(cnt)) < accuracy){
+                addColorGraphPoint(devNum, cnt, data->at(cnt), accuracy);
+
+                break;
+            }
+        }
+    }
+     _listGraph.at(devNum)->replot();
+}
+
+void MainWindow::addColorGraphPoint(const uint8_t devNum, int keyX, double valYdata, const double accuracy)
+{
+    /*
+     * 1. Ищем совпадение графиков
+     * 2. Если есть, то проверяем есть ли уже такой ключ-значение в списке
+     * 3. Пробегаем по графикам, пока не найдем
+     *
+     */
+    /* Данные (x и y), полученные после сравнения графиков, сравнить с map*
+     * TODO: добавить позже */
+    /* От графика получили какое-то значение после сравнения */
+    /* Это значение нужно сравнить со всеми ключами :) */
+        for(int cnt_list_graph_color = 0; cnt_list_graph_color < 256; cnt_list_graph_color++){
+            uint cnt_values = listColorGraph[devNum].at(cnt_list_graph_color)->mapValueGraph.count(keyX);
+            if(cnt_values == 0){
+                listColorGraph[devNum].at(cnt_list_graph_color)->mapValueGraph.insert(keyX, valYdata);
+                listColorGraph[devNum].at(cnt_list_graph_color)->graph->addData(keyX, valYdata);
+            }
+            /* Сравниваем значение с заданной точностью со значением ключа */
+            else {
+                /* список с ключами, которые проверяем */
+                QList<int16_t> list_val = listColorGraph[devNum].at(cnt_list_graph_color)->mapValueGraph.values(keyX);
+                bool next_graph = false;
+                while(cnt_values > 0){
+                    cnt_values--;
+                    if(std::abs(list_val.at(cnt_values) - valYdata) < accuracy){
+                        next_graph = true;
+                        break;  //out while(cnt_values < 0)
+                    }
+                }
+                if(next_graph == false){
+                    listColorGraph[devNum].at(cnt_list_graph_color)->mapValueGraph.insert(keyX, valYdata);
+                    listColorGraph[devNum].at(cnt_list_graph_color)->graph->addData(keyX, valYdata);
+                    break;      //out  for(int cnt_list_graph_color = 0; cnt_list_graph_color < 256; cnt_list_graph_color++)
+                }
+            }
+        }
+}
+
+void MainWindow::GraphProcessing(const uint8_t numDev, QVector<double> *data, const double acc)
+{
+    int tmpGraph = checkGraphics(numDev, data, acc);
+    qDebug() << "tmpGraph " << tmpGraph;
+    qDebug() << "dev Number" << numDev;
+
+    if(tmpGraph == -1){
+        currentIndexGraph[numDev]++;
+        qDebug() << " currentIndex" << currentIndexGraph[numDevice];
+        _listGraph.at(numDev)->addGraph();
+        _listGraph.at(numDev)->graph(currentIndexGraph[numDev])->setData(X, *_listData.at(numDev));
+    }
+    else{
+        /* Увеличим количество графиков с такими данными */
+        uint8_t* dataVec  = vecCntGraph_[numDev]->data();
+        dataVec+=tmpGraph;
+        (*dataVec)++;
+        /*GOTO: get Color */
+        maxCountGraphics_ = 30;
+        curColor = wColorScale->getColor((double)(*dataVec)/maxCountGraphics_);
+
+        pen.setColor(curColor);
+        _listGraph.at(numDev)->graph(tmpGraph)->setPen(pen);
+        _listGraph.at(numDev)->replot();
+    }
+}
+
+void MainWindow::GraphProcessingV2(const uint8_t numDev, QVector<double> *data, const double acc)
+{
+    checkGraphicsV2(numDev, data, acc);
+}
 void MainWindow::dataProccesing(pointsDevices *listDevice)
 {
-    uint8_t device = listDevice->numDevices;
-    /*заполняем _list данными */
-    for(int i=0; i < listDevice->ADC1.size(); i++){
-        _listADC1 [device]->append(listDevice->ADC1);
-        _listADC2 [device]->append(listDevice->ADC2);
-        _listAccX [device]->append(listDevice->accX);
-        _listAccY [device]->append(listDevice->accY);
-        _listAccZ [device]->append(listDevice->accZ);
-        _listTsens[device]->append(listDevice->Tsens);
+    numDevice = listDevice->numDevices;
+    /*заполняем _list данными в зависимости от выбранного radioButton*/
+    if(flagRadButtons[numDevice] == sRadioADC1){
+        for(int i=0; i < listDevice->ADC1.size(); i++){
+
+            if(listShift_[numDevice]!=0)
+                listShift_[numDevice]--;
+
+            else{
+                _listData [numDevice]->append(listDevice->ADC1.at(i));
+            }
+
+            if(beginGraph[numDevice] != true){
+                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->addData(X, *_listData[numDevice]);
+                 _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
+                 _listGraph.at(numDevice)->replot();           // Отрисовываем график
+            }
+
+            if(_listData [numDevice]->size() >= WidthGraph){
+
+                GraphProcessingV2(numDevice, _listData [numDevice], 1000);
+                _listData [numDevice]->clear();
+            }
+        }
+
+    }
+    else if(flagRadButtons[numDevice] == sRadioADC2){
+        for(int i=0; i < listDevice->ADC2.size(); i++){
+
+            if(listShift_[numDevice]!=0)
+                listShift_[numDevice]--;
+            else
+                _listData [numDevice]->append(listDevice->ADC2.at(i));
+
+            if(beginGraph[numDevice] != true){
+                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->addData(X, *_listData[numDevice]);
+                 _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
+                 _listGraph.at(numDevice)->replot();           // Отрисовываем график
+            }
+
+            if(_listData [numDevice]->size() >= WidthGraph){
+
+                GraphProcessingV2(numDevice, _listData [numDevice], 100);
+                _listData [numDevice]->clear();
+            }
+
+
+
+        }
+
+    }
+    else if(flagRadButtons[numDevice] == sRadioAccX){
+        for(int i=0; i < listDevice->accX.size(); i++){
+            if(listShift_[numDevice]!=0)
+                listShift_[numDevice]--;
+            else
+                _listData [numDevice]->append(listDevice->accX.at(i));
+
+            if(beginGraph[numDevice] != true){
+                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->addData(X, *_listData[numDevice]);
+                 _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
+                 _listGraph.at(numDevice)->replot();           // Отрисовываем график
+            }
+
+            if(_listData [numDevice]->size() >= WidthGraph){
+                //beginGraph[numDevice] = true;
+                GraphProcessingV2(numDevice, _listData [numDevice], 100);
+                _listData [numDevice]->clear();
+            }
+        }
+
+    }
+    else if(flagRadButtons[numDevice] == sRadioAccY){
+        for(int i=0; i < listDevice->accY.size(); i++){
+            if(listShift_[numDevice]!=0)
+                listShift_[numDevice]--;
+            else
+                _listData [numDevice]->append(listDevice->accY.at(i));
+
+            if(_listData [numDevice]->size() >= WidthGraph){
+
+                GraphProcessingV2(numDevice, _listData [numDevice], 100);
+                _listData [numDevice]->clear();
+            }
+        }
+        if(beginGraph[numDevice] != true){
+             _listGraph.at(numDevice)->graph(0)->addData(X, *_listData[numDevice]);
+        }
+    }
+    else if(flagRadButtons[numDevice] == sRadioAccZ){
+        for(int i=0; i < listDevice->accZ.size(); i++){
+            if(listShift_[numDevice]!=0)
+                listShift_[numDevice]--;
+            else
+                _listData [numDevice]->append(listDevice->accZ.at(i));
+
+            if(beginGraph[numDevice] != true){
+                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->addData(X, *_listData[numDevice]);
+                 _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
+                 _listGraph.at(numDevice)->replot();           // Отрисовываем график
+            }
+
+            if(_listData [numDevice]->size() >= WidthGraph){
+                GraphProcessingV2(numDevice, _listData [numDevice], 100);
+                _listData [numDevice]->clear();
+            }
+        }
+
+    }
+    else if(flagRadButtons[numDevice] == sRadioTsens){
+        for(int i=0; i < listDevice->Tsens.size(); i++){
+            if(listShift_[numDevice]!=0)
+                listShift_[numDevice]--;
+            else
+                _listData[numDevice]->append(listDevice->Tsens.at(i));
+
+            if(beginGraph[numDevice] != true){
+                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->addData(X, *_listData[numDevice]);
+                 _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
+                 _listGraph.at(numDevice)->replot();           // Отрисовываем график
+            }
+
+            if(_listData [numDevice]->size() >= WidthGraph){
+                GraphProcessingV2(numDevice, _listData [numDevice], 100);
+                _listData [numDevice]->clear();
+            }
+        }
+
     }
 
-    if(flagRadButtons[device] == sRadioADC1){
-        _listGraph.at(device)->yAxis->setLabel( "ADC1" );
-        _listGraph.at(device)->graph()->setData(X, *_listADC1.at(device));
-    }
-    else if(flagRadButtons[device] == sRadioADC2){
-        _listGraph.at(device)->yAxis->setLabel( "ADC2" );
-        _listGraph.at(device)->graph()->setData(X, *_listADC2.at(device));
-    }
-    else if(flagRadButtons[device] == sRadioAccX){
-        _listGraph.at(device)->yAxis->setLabel( "AccX" );
-        _listGraph.at(device)->graph()->setData(X, *_listAccX.at(device));
-    }
-    else if(flagRadButtons[device] == sRadioAccY){
-        _listGraph.at(device)->yAxis->setLabel( "AccY" );
-        _listGraph.at(device)->graph()->setData(X, *_listAccY.at(device));
-    }
-    else if(flagRadButtons[device] == sRadioAccZ){
-        _listGraph.at(device)->yAxis->setLabel( "AccZ" );
-        _listGraph.at(device)->graph()->setData(X, *_listAccZ.at(device));
-    }
-    else if(flagRadButtons[device] == sRadioTsens){
-        _listGraph.at(device)->yAxis->setLabel( "T" );
-        _listGraph.at(device)->graph()->setData(X, *_listTsens.at(device));
+    _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
+    _listGraph.at(numDevice)->replot();           // Отрисовываем график
+}
+
+//void MainWindow::dataProccesing(pointsDevices *listDevice)
+//{
+//    numDevice = listDevice->numDevices;
+//    /*заполняем _list данными в зависимости от выбранного radioButton*/
+//    if(flagRadButtons[numDevice] == sRadioADC1){
+//        for(int i=0; i < listDevice->ADC1.size(); i++){
+
+//            if(listShift_[numDevice]!=0)
+//                listShift_[numDevice]--;
+
+//            else{
+//                _listData [numDevice]->append(listDevice->ADC1.at(i));
+//            }
+
+//            if(beginGraph[numDevice] != true){
+//                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->addData(X, *_listData[numDevice]);
+//                 _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
+//                 _listGraph.at(numDevice)->replot();           // Отрисовываем график
+//            }
+
+//            if(_listData [numDevice]->size() >= WidthGraph){
+//                //beginGraph[numDevice] = true;
+//                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->data()->clear();
+//                GraphProcessing(numDevice, _listData [numDevice], 1000);
+//                _listData [numDevice]->clear();
+//            }
+//        }
+
+//    }
+//    else if(flagRadButtons[numDevice] == sRadioADC2){
+//        for(int i=0; i < listDevice->ADC2.size(); i++){
+
+//            if(listShift_[numDevice]!=0)
+//                listShift_[numDevice]--;
+//            else
+//                _listData [numDevice]->append(listDevice->ADC2.at(i));
+
+//            if(beginGraph[numDevice] != true){
+//                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->addData(X, *_listData[numDevice]);
+//                 _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
+//                 _listGraph.at(numDevice)->replot();           // Отрисовываем график
+//            }
+
+//            if(_listData [numDevice]->size() >= WidthGraph){
+//                //beginGraph[numDevice] = true;
+//                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->data()->clear();
+//                GraphProcessing(numDevice, _listData [numDevice], 1000);
+//                _listData [numDevice]->clear();
+//            }
+
+
+
+//        }
+
+//    }
+//    else if(flagRadButtons[numDevice] == sRadioAccX){
+//        for(int i=0; i < listDevice->accX.size(); i++){
+//            if(listShift_[numDevice]!=0)
+//                listShift_[numDevice]--;
+//            else
+//                _listData [numDevice]->append(listDevice->accX.at(i));
+
+//            if(beginGraph[numDevice] != true){
+//                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->addData(X, *_listData[numDevice]);
+//                 _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
+//                 _listGraph.at(numDevice)->replot();           // Отрисовываем график
+//            }
+
+//            if(_listData [numDevice]->size() >= WidthGraph){
+//                //beginGraph[numDevice] = true;
+//                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->data()->clear();
+//                GraphProcessing(numDevice, _listData [numDevice], 1000);
+//                _listData [numDevice]->clear();
+//            }
+//        }
+
+//    }
+//    else if(flagRadButtons[numDevice] == sRadioAccY){
+//        for(int i=0; i < listDevice->accY.size(); i++){
+//            if(listShift_[numDevice]!=0)
+//                listShift_[numDevice]--;
+//            else
+//                _listData [numDevice]->append(listDevice->accY.at(i));
+
+//            if(_listData [numDevice]->size() >= WidthGraph){
+//                beginGraph[numDevice] = true;
+//                GraphProcessing(numDevice, _listData [numDevice], 1000);
+//                _listData [numDevice]->clear();
+//            }
+//        }
+//        if(beginGraph[numDevice] != true){
+//             _listGraph.at(numDevice)->graph(0)->addData(X, *_listData[numDevice]);
+//        }
+//    }
+//    else if(flagRadButtons[numDevice] == sRadioAccZ){
+//        for(int i=0; i < listDevice->accZ.size(); i++){
+//            if(listShift_[numDevice]!=0)
+//                listShift_[numDevice]--;
+//            else
+//                _listData [numDevice]->append(listDevice->accZ.at(i));
+
+//            if(beginGraph[numDevice] != true){
+//                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->addData(X, *_listData[numDevice]);
+//                 _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
+//                 _listGraph.at(numDevice)->replot();           // Отрисовываем график
+//            }
+
+//            if(_listData [numDevice]->size() >= WidthGraph){
+//                //beginGraph[numDevice] = true;
+//                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->data()->clear();
+//                GraphProcessing(numDevice, _listData [numDevice], 1000);
+//                _listData [numDevice]->clear();
+//            }
+//        }
+
+//    }
+//    else if(flagRadButtons[numDevice] == sRadioTsens){
+//        for(int i=0; i < listDevice->Tsens.size(); i++){
+//            if(listShift_[numDevice]!=0)
+//                listShift_[numDevice]--;
+//            else
+//                _listData[numDevice]->append(listDevice->Tsens.at(i));
+
+//            if(beginGraph[numDevice] != true){
+//                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->addData(X, *_listData[numDevice]);
+//                 _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
+//                 _listGraph.at(numDevice)->replot();           // Отрисовываем график
+//            }
+
+//            if(_listData [numDevice]->size() >= WidthGraph){
+//                //beginGraph[numDevice] = true;
+//                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->data()->clear();
+//                GraphProcessing(numDevice, _listData [numDevice], 1000);
+//                _listData [numDevice]->clear();
+//            }
+//        }
+
+//    }
+
+//    _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
+//    _listGraph.at(numDevice)->replot();           // Отрисовываем график
+//}
+void MainWindow::graphicSettings()
+{
+    if (!file_global.open(QFile::ReadOnly|QFile::Text))
+    {
+        qDebug() << "Ошибка при открытии файла";
+        return;
     }
 
-    _listGraph.at(device)->rescaleAxes();      // Масштабируем график по данным
-    _listGraph.at(device)->replot();           // Отрисовываем график
+    fileUI->show();
 }
 
 void MainWindow::openFile()
 {
-    QString path_file = "C:/Test";
+    QString path_file = "D:/test_server";
     QString file_name = QFileDialog::getOpenFileName(this, "Открыть файл с измерениями",
                                                      path_file, "Txt File(*.txt)");
-    emit setFileName(file_name);
+    if(file_global.isOpen())
+        file_global.close();
+    file_global.setFileName(file_name);
+    if (!file_global.open(QFile::ReadOnly|QFile::Text))
+    {
+        qDebug() << "Ошибка при открытии файла";
+        return;
+    }
+
+    fileUI->show();
 }
 
+void MainWindow::getSettingMeasure(pointsMeasure_ *settingPoint)
+{
+    QVector<double> X;
+    bool ok;
+    uint8_t dev_num = 0;
+    uint16_t mes = 0;
+    QString tmp;
+    uint array_graphCount[6];
+    QList<QVector<double>*> listMeasure;
+    for(int i=0; i <6; i++){
+        listMeasure.append(new QVector<double>);
+        array_graphCount[i] = settingPoint->graphCounter;
+    }
+    //X.resize(settingPoint->graphCounter);
+    for (uint i = settingPoint->begin; i<(settingPoint->begin+settingPoint->graphCounter) ; i++)
+        X.append(i);
+
+    while(!file_global.atEnd()){
+        QString text = file_global.read(32);
+        if(text.startsWith("ed00ff", Qt::CaseInsensitive)){
+            dev_num = text.midRef(6, 2).toUInt(&ok, 16) -1;
+            if(array_graphCount[dev_num] == 0)
+                continue;
+            tmp = text.mid(8+settingPoint->modX.at(dev_num)*4, 4); //8 - шапка, 4*.. сдвиг необходимого измерения
+            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);  ;
+            listMeasure.at(dev_num)->append(mes);
+            array_graphCount[dev_num]--;
+        }
+    }
+    file_global.close();
+    /* Построить сразу эти графики */
+    for(int i=0; i <6; i++){
+        _listGraph.at(i)->graph()->setData(X, *listMeasure.at(i));
+        _listGraph.at(i)->rescaleAxes();
+        _listGraph.at(i)->replot();
+    }
+}
+
+
 void MainWindow::settingsSlot()
+{
+    m_cmdESP = SETTINGS_ESP;
+    g_ = ui->lineG->text().toInt();
+    scale_ = ui->lineScale->text().toInt();
+    if(g_<2 || g_ > 8){
+        QMessageBox messageBox; messageBox.critical(0,"Ошибка", "G должно быть: 2-8");
+        return;
+    }
+    if(scale_<2 || scale_ > 10){
+        QMessageBox messageBox; messageBox.critical(0,"Ошибка", "Шаг должно быть: 2-10");
+        return;
+    }
+    emit cmdEspALL(m_cmdESP, g_, scale_ );
+}
+
+void MainWindow::startSlot()
+{
+    m_cmdESP = START_ESP;
+
+    WidthGraph = ui->lineWidth->text().toUInt();
+    shiftGraph = ui->lineShift->text().toUInt();
+    initListMeasure();
+
+    ui->lineShift->setEnabled(false);
+    ui->lineWidth->setEnabled(false);
+    ui->pbChangeShift->setEnabled(false);
+    emit cmdEspALL(m_cmdESP, g_, scale_ );
+}
+void MainWindow::stopSlot()
+{
+    m_cmdESP = STOP_ESP;
+    ui->lineShift->setEnabled(true);
+    ui->lineWidth->setEnabled(true);
+    ui->pbChangeShift->setEnabled(true);
+
+    disconnect(_server, SIGNAL(newData(pointsDevices*)), this, SLOT(dataProccesing(pointsDevices*)));
+    emit cmdEspALL(m_cmdESP, g_, scale_ );
+}
+
+void MainWindow::searchSlot()
 {
 
 }
 
 void MainWindow::initGraphics()
 {
-//    QFont legendFont = font();
-//    legendFont.setPointSize(8);
+
+    /* Set width Pen and set Color */
+    pen.setWidth(1);
+    pen.setColor(QColor(0, 0, 100));
 
     for(int i=0; i<_devNumber; i++){
         _listGraph.at(i)->addGraph(); // blue line
-        _listGraph.at(i)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
+        _listGraph.at(i)->graph(maxCountGraphics_)->setPen(pen);
 
         mColorMap1 = new QCPColorMap(_listGraph.at(i)->xAxis, _listGraph.at(i)->yAxis);
-        mColorMap1->rescaleDataRange(true);
+        //mColorMap1->rescaleDataRange(true);
         //mColorMap1->data()->setRange(QCPRange(0, 50), QCPRange(0, 1));
-        mColorMap1->data()->setSize(0, 5);
+        mColorMap1->data()->setSize(0, 1);
         mColorMap1->setInterpolate(0);
         mColorScale1 = new QCPColorScale(_listGraph.at(i));
         _listGraph.at(i)->plotLayout()->addElement(0, 1, mColorScale1);
@@ -160,11 +662,13 @@ void MainWindow::initGraphics()
         QCPColorGradient *mGradient = new QCPColorGradient();
         mColorMap1->setGradient(mGradient->gpJet );
         mGradient->setLevelCount(20);
-        mColorMap1->setDataRange(QCPRange(0, maxCountGraphics_));   //range тепловой карты
+        mColorMap1->setDataRange(QCPRange(1, maxCountGraphics_));   //range тепловой карты
 
         _listGraph.at(i)->rescaleAxes();
         _listGraph.at(i)->replot();
 
+//    QFont legendFont = font();
+//    legendFont.setPointSize(8);
 //        _listGraph.at(i)->legend->setVisible(true);
 //        _listGraph.at(i)->legend->setFont(legendFont);
 //        _listGraph.at(i)->legend->setSelectedFont(legendFont);
@@ -180,7 +684,7 @@ void MainWindow::ReinitGraphic(int numDev)
     _listGraph.at(numDev)->clearGraphs();
 
     _listGraph.at(numDev)->addGraph(); // blue line
-    _listGraph.at(numDev)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
+    _listGraph.at(numDev)->graph(maxCountGraphics_)->setPen(QPen(QColor(0, 0, 100)));
 
     mColorMap1 = new QCPColorMap(_listGraph.at(numDev)->xAxis, _listGraph.at(numDev)->yAxis);
     mColorMap1->rescaleDataRange(true);
@@ -200,27 +704,93 @@ void MainWindow::ReinitGraphic(int numDev)
     _listGraph.at(numDev)->replot();
 }
 
-void MainWindow::test_plot(){
+void MainWindow::initListMeasure()
+{
+    /* если проинициализировано уже */
+    if(flagRadButtons.count()){
+        flagRadButtons.clear();
+        X.clear();
+        for(int i=0; i < _devNumber; i++){
+            delete _listData.at(i);
+            delete vecCntGraph_.at(i);
+        }
+        vecCntGraph_.clear();
+    }
 
-    ui->customPlot1->addGraph();
-    ui->customPlot1->graph(0)->setPen(QPen(QColor(0, 0, 100)));
-    mColorMap1 = new QCPColorMap(ui->customPlot1->xAxis, ui->customPlot1->yAxis);
-    mColorMap1->rescaleDataRange(true);
-    mColorMap1->data()->setRange(QCPRange(0, 50), QCPRange(0, 271));
-    mColorMap1->data()->setSize(0, 5);
-    mColorMap1->setInterpolate(0);
-    mColorScale1 = new QCPColorScale(ui->customPlot1);
-    ui->customPlot1->plotLayout()->addElement(0, 1, mColorScale1);
-    mColorMap1->setColorScale(mColorScale1);
-    QCPColorGradient *mGradient = new QCPColorGradient();
-    mColorMap1->setGradient(mGradient->gpJet );
-    mGradient->setLevelCount(20);
-    mColorMap1->setDataRange(QCPRange(0, maxCountGraphics_));
-    ui->customPlot1->rescaleAxes();
-    ui->customPlot1->replot();
+    for(int i=0; i < _devNumber; i++)
+    {
+        listShift_[i] = shiftGraph;
+        /* GOTO: Считывать текущее значение*/
+        flagRadButtons.append(getTextRadBut(i));
+       _listData.append((new QVector <double>[WidthGraph]));
 
-    qDebug() << "key " << ui->customPlot1->graph(0)->data()->dataRange();
-    qDebug() << "value " << ui->customPlot1->graph(0)->data()->at(1)->value;
+       vecCntGraph_.append(new QVector <uint8_t>);
+       vecCntGraph_[i]->resize(maxCountGraphics_+1);
+       currentIndexGraph[i] = -1;
+       beginGraph[i] = false;
+    }
+    for(int i=0; i < WidthGraph; i++) X.append(i);
+}
+
+QString MainWindow::getTextRadBut(int id)
+{
+    int numButton = butGrList.at(id)->checkedId();
+
+    switch(numButton){
+    case 0:
+
+        return sRadioADC1;
+        break;
+
+    case 1:
+        return sRadioADC2;
+        break;
+
+    case 2:
+        return sRadioAccX;
+
+        break;
+
+    case 3:
+        return sRadioAccY;
+
+        break;
+
+    case 4:
+        return sRadioAccZ;
+
+        break;
+
+    case 5:
+        return sRadioTsens;
+
+        break;
+    }
+    return "abcg";
+}
+
+
+
+void MainWindow::test_plot()
+{
+    for (int cnt_cstPlot=0; cnt_cstPlot <  _listGraph.size(); cnt_cstPlot++){
+        listColorGraph.append(QList <graphColor*>());
+        for(uint32_t cnt = 0; cnt < maxCountGraphics_; cnt++){
+            listColorGraph[cnt_cstPlot].append(new graphColor());
+            listColorGraph[cnt_cstPlot].at(cnt)->color = wColorScale->getColor((double)cnt/maxCountGraphics_);
+            listColorGraph[cnt_cstPlot].at(cnt)->graph = ui->customPlot1->addGraph();
+            listColorGraph[cnt_cstPlot].at(cnt)->graph->setPen(listColorGraph[cnt_cstPlot].at(cnt)->color);
+        }
+    }
+    /* При совпадении какой-либо точки, необходимо добавить ее в Map графика */
+    QMultiMap <int, int16_t> m_test;
+    m_test.insert(1, -100);
+    m_test.insert(1, 100);
+    m_test.insert(1, 4000);
+    m_test.insert(1, 5);
+    QList<int16_t> val = m_test.values(1);  //Список, содержащий количество точек
+    // qDebug() << m_test.contains(1);      //Проверяем, есть или нет такой ключ
+    //qDebug() << m_test.count(3);          // Сколько содержит того или иного
 }
 
 void MainWindow::setRadButId()
@@ -266,6 +836,13 @@ void MainWindow::setRadButId()
     ui->buttonGroup_6->setId(ui->radioAccY_6, 3);
     ui->buttonGroup_6->setId(ui->radioAccZ_6, 4);
     ui->buttonGroup_6->setId(ui->radioTsense_6, 5);
+
+    butGrList.append(ui->buttonGroup);
+    butGrList.append(ui->buttonGroup_2);
+    butGrList.append(ui->buttonGroup_3);
+    butGrList.append(ui->buttonGroup_4);
+    butGrList.append(ui->buttonGroup_5);
+    butGrList.append(ui->buttonGroup_6);
 }
 
 /* Отправляем команду ESP */
@@ -281,36 +858,89 @@ void MainWindow::on_pbSendESP_clicked()
     }
     else if(cmd == "STOP"){
         m_cmdESP = STOP_ESP;
+        ui->lineShift->setEnabled(true);
+        ui->lineWidth->setEnabled(true);
+        ui->pbChangeShift->setEnabled(true);
     }
-    emit cmdEspALL(m_cmdESP);
+    else if(cmd == "SETTINGS"){
+        m_cmdESP = SETTINGS_ESP;
+        g_ = ui->lineG->text().toInt();
+        scale_ = ui->lineScale->text().toInt();
+        if(g_<2 || g_ > 8){
+            QMessageBox messageBox; messageBox.critical(0,"Ошибка", "G должно быть: 2-8");
+            return;
+        }
+        if(scale_<2 || scale_ > 10){
+            QMessageBox messageBox; messageBox.critical(0,"Ошибка", "Шаг должно быть: 2-10");
+            return;
+        }
+
+    }
+    else if(cmd == "SEARCH DEVICE"){
+        m_cmdESP = SEARCH_ESP;
+    }
+    emit cmdEspALL(m_cmdESP, g_, scale_ );
 
 
 }
 
 void MainWindow::changeStrRadBut(int idGroup, int numButton)
 {
+    _listData[idGroup]->clear();
+    listShift_[idGroup] = shiftGraph;
+    vecCntGraph_[idGroup]->clear();
+    vecCntGraph_[idGroup]->resize(maxCountGraphics_+1);
+    currentIndexGraph[idGroup] = -1;
+
+    beginGraph[idGroup] = false;
+
     switch(numButton){
     case 0:
         flagRadButtons[idGroup] = sRadioADC1;
+        _listGraph.at(idGroup)->yAxis->setLabel( "ADC1" );
+        _listGraph.at(idGroup)->clearGraphs();
+        _listGraph.at(idGroup)->addGraph(); // blue line
+        _listGraph.at(idGroup)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
         break;
+
     case 1:
         flagRadButtons[idGroup] = sRadioADC2;
-
+        _listGraph.at(idGroup)->yAxis->setLabel( "ADC2" );
+        _listGraph.at(idGroup)->clearGraphs();
+        _listGraph.at(idGroup)->addGraph(); // blue line
+        _listGraph.at(idGroup)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
         break;
+
     case 2:
         flagRadButtons[idGroup] = sRadioAccX;
-
+        _listGraph.at(idGroup)->yAxis->setLabel( "AccX" );
+        _listGraph.at(idGroup)->clearGraphs();
+        _listGraph.at(idGroup)->addGraph(); // blue line
+        _listGraph.at(idGroup)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
         break;
+
     case 3:
         flagRadButtons[idGroup] = sRadioAccY;
-
+        _listGraph.at(idGroup)->yAxis->setLabel( "AccY" );
+        _listGraph.at(idGroup)->clearGraphs();
+        _listGraph.at(idGroup)->addGraph(); // blue line
+        _listGraph.at(idGroup)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
         break;
+
     case 4:
         flagRadButtons[idGroup] = sRadioAccZ;
-
+        _listGraph.at(idGroup)->yAxis->setLabel( "AccZ" );
+        _listGraph.at(idGroup)->clearGraphs();
+        _listGraph.at(idGroup)->addGraph(); // blue line
+        _listGraph.at(idGroup)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
         break;
+
     case 5:
         flagRadButtons[idGroup] = sRadioTsens;
+        _listGraph.at(idGroup)->yAxis->setLabel( "T" );
+        _listGraph.at(idGroup)->clearGraphs();
+        _listGraph.at(idGroup)->addGraph(); // blue line
+        _listGraph.at(idGroup)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
         break;
     }
 }
@@ -345,39 +975,10 @@ void MainWindow::onGroupButtonClicked_6(int numButton)
     changeStrRadBut(5, numButton);
 }
 
-void MainWindow::initListMeasure()
-{
-    /* если проинициализировано уже */
-    if(flagRadButtons.count()){
-        flagRadButtons.clear();
-        X.clear();
-        for(int i=0; i < _devNumber; i++){
-
-           delete _listADC1.at(i);
-           delete _listADC2.at(i);
-           delete _listAccX.at(i);
-           delete _listAccY.at(i);
-           delete _listAccZ.at(i);
-           delete _listTsens.at(i);
-         }
-    }
-
-    for(int i=0; i < _devNumber; i++)
-    {
-        flagRadButtons.append("ADC1");
-       _listADC1.append((new QVector <double>[WidthGraph]));
-       _listADC2.append((new QVector <double>[WidthGraph]));
-       _listAccX.append((new QVector <double>[WidthGraph]));
-       _listAccY.append((new QVector <double>[WidthGraph]));
-       _listAccZ.append((new QVector <double>[WidthGraph]));
-       _listTsens.append((new QVector <double>[WidthGraph]));
-    }
-    for(int i=0; i < WidthGraph; i++) X.append(i);
-}
-
 void MainWindow::on_pbChangeShift_clicked()
 {
     WidthGraph = ui->lineWidth->text().toUInt();
     shiftGraph = ui->lineShift->text().toUInt();
     initListMeasure();
 }
+

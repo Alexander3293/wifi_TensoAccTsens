@@ -5,7 +5,7 @@
 #include <QUdpSocket>
 #include <QNetworkDatagram>
 #include <QMetaType>
-
+#include <QDataStream>
 #include <QFile>
 #include <QTime>
 
@@ -23,8 +23,10 @@ typedef struct
 } pointsDevices;
 
 typedef enum {
-    START_ESP = 0,
-    STOP_ESP = 1
+    STOP_ESP = 0,
+    START_ESP = 1,
+    SETTINGS_ESP = 2,
+    SEARCH_ESP = 3
 }cmdESP;
 
 class server: public QObject
@@ -35,11 +37,12 @@ public:
 public:
     server(QObject *parent = 0);
     ~server();
+    void initUDP();
 
 public slots:
-    void slotConnect();
+
     void slotDataRead();
-    void cmdEspAllSlot(cmdESP);
+    void cmdEspAllSlot(cmdESP cmd, uint setG, uint setScale);
 signals:
     void newData(pointsDevices* data);
 private:
@@ -51,10 +54,14 @@ private:
     int port_;
 
     QString espHeader = "ed00ff";
+    //QString myHeader  = "ff00dd";
+    QString devReadyHeader  = "edaaff";
+    char myHeader[3];
     uint16_t OneDatagramSize = 250;
     quint32 counterDatagram;
     uint32_t dataDatagramlen;
     int deviceId;
+
 
 
 };

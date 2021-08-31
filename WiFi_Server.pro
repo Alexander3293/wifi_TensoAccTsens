@@ -10,6 +10,7 @@ CONFIG += c++11
 
 SOURCES += \
     colorscale.cpp \
+    fileform.cpp \
     fileprocessing.cpp \
     main.cpp \
     mainwindow.cpp \
@@ -19,6 +20,7 @@ SOURCES += \
 
 HEADERS += \
     colorscale.h \
+    fileform.h \
     fileprocessing.h \
     mainwindow.h \
     qcustomplot.h \
@@ -27,6 +29,7 @@ HEADERS += \
 
 FORMS += \
     colorscale.ui \
+    fileform.ui \
     mainwindow.ui
 
 # Default rules for deployment.

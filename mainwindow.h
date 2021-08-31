@@ -6,6 +6,14 @@
 #include "server.h"
 #include <qcustomplot.h>
 #include "colorscale.h"
+#include "fileprocessing.h"
+#include "fileform.h"
+
+typedef struct{
+    QCPGraph* graph;
+    QColor color;
+    QMultiMap <int, int16_t> mapValueGraph;  //int - ось X, int16_t - значения
+}graphColor;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -20,14 +28,18 @@ public:
     ~MainWindow();
 
 signals:
-    void cmdEspALL(cmdESP);
+    void cmdEspALL(cmdESP, uint, uint);
     void setFileName(QString);
 public slots:
     void projMessage(QString);
 private slots:
     void dataProccesing(pointsDevices* listDevice);
     void openFile();
+    void graphicSettings();
     void settingsSlot();
+    void startSlot();
+    void stopSlot();
+    void searchSlot();
     void on_pbSendESP_clicked();
     void onGroupButtonClicked(int numButton);
     void onGroupButtonClicked_2(int numButton);
@@ -35,16 +47,22 @@ private slots:
     void onGroupButtonClicked_4(int numButton);
     void onGroupButtonClicked_5(int numButton);
     void onGroupButtonClicked_6(int numButton);
-
+    void getSettingMeasure(pointsMeasure_ *);
     void on_pbChangeShift_clicked();
 
 private:
+    int checkGraphics(const uint8_t devNum, QVector <double> *data, double accuracy);
+    void checkGraphicsV2(const uint8_t devNum, QVector<double> *data, const double accuracy);
+    void addColorGraphPoint(const uint8_t devNum, int keyX, double valYdata, const double accuracy);
+    void GraphProcessing(const uint8_t numDev, QVector<double> *data, const double acc);
+    void GraphProcessingV2(const uint8_t numDev, QVector<double> *data, const double acc);
     void initGraphics();
-    void ReinitGraphic(int numDev);
+    void ReinitGraphic(int numDev);    
     void setRadButId();
     void changeStrRadBut(int idGroup, int numButton);
     void test_plot();
     void initListMeasure();         //инициализация множества массивов, где хранятся данные
+    QString getTextRadBut(int);
 
     Ui::MainWindow *ui;
     cmdESP m_cmdESP;
@@ -52,18 +70,19 @@ private:
     uint32_t _pcktlen, counterTcpPckt;
     uint32_t counterX=0;
     uint8_t _devNumber;
+    uint8_t numDevice;
+
     uint16_t WidthGraph;
     uint16_t shiftGraph;
+    uint8_t g_;
+    uint8_t scale_;
 
-    QList<QVector<double>*> _listADC1;
-    QList <QVector<double>*> _listADC2;
-    QList <QVector<double>*> _listTsens;
-    QList <QVector<double>*> _listAccX;
-    QList <QVector<double>*> _listAccY;
-    QList <QVector<double>*> _listAccZ;
+    QList<QVector<double>*> _listData;  //Тут хранятся данные с 6 графиков для построения
+    QVector<uint> listShift_;
     QVector<double> X;
 
     QStringList flagRadButtons;
+    QList<QButtonGroup*> butGrList;
     QString sRadioADC1 = "ADC1";
     QString sRadioADC2 = "ADC2";
     QString sRadioAccX = "AccX";
@@ -72,14 +91,26 @@ private:
     QString sRadioTsens = "T";
 
     QList<QCustomPlot* > _listGraph;
-    QVector<uint8_t> vecCntGraph_;  //содержит количество повторений графиков (пока что для 1 графика только)
-    uint maxCountGraphics_;         //максимальное количество графиков
-    double accuracyCompare_;        //точность сравнения
+    QList<QVector<uint8_t>*> vecCntGraph_;//содержит количество повторений графиков
+    int currentIndexGraph[6];
+    uint maxCountGraphics_;              //максимальное количество графиков
+    double accuracyCompare_;             //точность сравнения
+    bool beginGraph[6];
+    QList <QList <graphColor*>> listColorGraph; //list с цветами графиков по 256 вкаждом из 6 графиков
 
     QCPColorMap* mColorMap1;
     QCPMarginGroup* mMarginGroup;
     QCPColorScale* mColorScale1;
+    QPen pen;
 
+    /*widget Color */
+    ColorScale * wColorScale;
+    QColor curColor;
+
+    /* File measure */
+    FileProcessing* fileMeasure;
+    fileForm* fileUI;
+    QFile file_global;
 
 };
 #endif // MAINWINDOW_H
