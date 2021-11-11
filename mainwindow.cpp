@@ -9,7 +9,8 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
 {
     _devNumber = 6;
-    maxCountGraphics_ = 255;
+    maxColorGraphics_ = 30;
+    maxGraphOnScene = 50;
     ui->setupUi(this);
 
     wColorScale = new ColorScale();
@@ -83,22 +84,9 @@ MainWindow::MainWindow(QWidget *parent)
     _listGraph.append(ui->customPlot5);
     _listGraph.append(ui->customPlot6);
 
-    pen.setWidth(6);
-
-    for (int cnt_cstPlot=0; cnt_cstPlot <  _listGraph.size(); cnt_cstPlot++){
-        listColorGraph.append(QList <graphColor*>());
-        for(uint32_t cnt = 0; cnt < maxCountGraphics_; cnt++){
-            listColorGraph[cnt_cstPlot].append(new graphColor());
-            listColorGraph[cnt_cstPlot].at(cnt)->color = wColorScale->getColor((double)cnt/maxCountGraphics_);
-            listColorGraph[cnt_cstPlot].at(cnt)->graph = ui->customPlot1->addGraph();
-            pen.setColor(listColorGraph[cnt_cstPlot].at(cnt)->color);
-            listColorGraph[cnt_cstPlot].at(cnt)->graph->setPen(pen);
-            listColorGraph[cnt_cstPlot].at(cnt)->graph->setLineStyle(QCPGraph::lsNone);              //точки не соединять
-            listColorGraph[cnt_cstPlot].at(cnt)->graph->setScatterStyle(QCPScatterStyle::ssCircle);  //круглая точка
-        }
-    }
 
     initGraphics();
+    initColorGraphs();
     /* Init list measure */
     initListMeasure();
     //test_plot();
@@ -155,31 +143,7 @@ int MainWindow::checkGraphics(const uint8_t devNum, QVector<double> *data, doubl
    return -1;
 }
 
-/* Проверяем точки графиков на совпадение */
-void MainWindow::checkGraphicsV2(const uint8_t devNum, QVector<double> *data,const double accuracy)
-{
-    uint8_t cntGraph = 0;
-    double val = 0;
-    //addColorGraphPoint(devNum, accuracy);
-    int current_cnt_graphics = _listGraph[devNum]->graphCount() - maxCountGraphics_;
-    qDebug() << "check Graphics " << current_cnt_graphics;
-    if(current_cnt_graphics == 1)
-        return;
-    /* Перебираем графики cntGraph и их значения сравниваем */
-    for(uint cnt=0; cnt < WidthGraph; cnt++){
-        for(cntGraph=maxCountGraphics_; cntGraph < current_cnt_graphics; cntGraph++){
-            val = _listGraph[devNum]->graph(cntGraph)->data()->at(cnt)->value;
-            if(std::abs(val - data->at(cnt)) < accuracy){
-                addColorGraphPoint(devNum, cnt, data->at(cnt), accuracy);
-
-                break;
-            }
-        }
-    }
-     _listGraph.at(devNum)->replot();
-}
-
-void MainWindow::addColorGraphPoint(const uint8_t devNum, int keyX, double valYdata, const double accuracy)
+void MainWindow::addColorGraphPoint(const uint8_t devNum,const int keyX,const double valYdata, const double accuracy)
 {
     /*
      * 1. Ищем совпадение графиков
@@ -191,11 +155,13 @@ void MainWindow::addColorGraphPoint(const uint8_t devNum, int keyX, double valYd
      * TODO: добавить позже */
     /* От графика получили какое-то значение после сравнения */
     /* Это значение нужно сравнить со всеми ключами :) */
-        for(int cnt_list_graph_color = 0; cnt_list_graph_color < 256; cnt_list_graph_color++){
+        for(uint cnt_list_graph_color = 0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++){
             uint cnt_values = listColorGraph[devNum].at(cnt_list_graph_color)->mapValueGraph.count(keyX);
             if(cnt_values == 0){
                 listColorGraph[devNum].at(cnt_list_graph_color)->mapValueGraph.insert(keyX, valYdata);
                 listColorGraph[devNum].at(cnt_list_graph_color)->graph->addData(keyX, valYdata);
+                qDebug() << "key_values" << keyX << valYdata;
+                break;
             }
             /* Сравниваем значение с заданной точностью со значением ключа */
             else {
@@ -212,6 +178,7 @@ void MainWindow::addColorGraphPoint(const uint8_t devNum, int keyX, double valYd
                 if(next_graph == false){
                     listColorGraph[devNum].at(cnt_list_graph_color)->mapValueGraph.insert(keyX, valYdata);
                     listColorGraph[devNum].at(cnt_list_graph_color)->graph->addData(keyX, valYdata);
+                    qDebug() << "key_values" << keyX << valYdata;
                     break;      //out  for(int cnt_list_graph_color = 0; cnt_list_graph_color < 256; cnt_list_graph_color++)
                 }
             }
@@ -236,8 +203,8 @@ void MainWindow::GraphProcessing(const uint8_t numDev, QVector<double> *data, co
         dataVec+=tmpGraph;
         (*dataVec)++;
         /*GOTO: get Color */
-        maxCountGraphics_ = 30;
-        curColor = wColorScale->getColor((double)(*dataVec)/maxCountGraphics_);
+        maxColorGraphics_ = 30;
+        curColor = wColorScale->getColor((double)(*dataVec)/maxColorGraphics_);
 
         pen.setColor(curColor);
         _listGraph.at(numDev)->graph(tmpGraph)->setPen(pen);
@@ -245,9 +212,33 @@ void MainWindow::GraphProcessing(const uint8_t numDev, QVector<double> *data, co
     }
 }
 
-void MainWindow::GraphProcessingV2(const uint8_t numDev, QVector<double> *data, const double acc)
+void MainWindow::GraphProcessingV2(const uint8_t numDev, const uint16_t numGraph, QVector<double> *data, const double acc)
 {
-    checkGraphicsV2(numDev, data, acc);
+    uint8_t cntGraph = 0;
+    double valGraph = 0;
+    double valCurrentGraph = 0;
+    int current_cnt_graphics = _listGraph[numDev]->graphCount() - maxColorGraphics_;
+    /* Перебираем графики cntGraph и их значения сравниваем */
+    for(uint cnt=0; cnt < WidthGraph; cnt++){
+        for(cntGraph=0; cntGraph < current_cnt_graphics; cntGraph++){
+            if(numGraph == cntGraph)
+                continue;
+            /* Если график еще не заполнен, данные пусты */
+            if(_listGraph[numDev]->graph(cntGraph)->data()->isEmpty()){
+                continue;
+            }
+            valGraph = _listGraph[numDev]->graph(cntGraph)->data()->at(cnt)->value;
+            valCurrentGraph = data->at(cnt);
+//            qDebug() <<_listGraph[devNum]->graph(cntGraph)->data()->at(cnt)->value;
+//            qDebug() << "graph0" << cntGraph << "graph1" << numGraph << "cnt" << cnt << "raznost" << std::abs(valGraph - data->at(cnt));
+            qDebug() << "val" << valGraph << "data->at(cnt)" << data->at(cnt);
+            if(std::abs(valGraph - valCurrentGraph) <= acc){
+                addColorGraphPoint(numDev, cnt, valCurrentGraph, acc);
+                break;
+            }
+        }
+    }
+     _listGraph.at(numDev)->replot();
 }
 void MainWindow::dataProccesing(pointsDevices *listDevice)
 {
@@ -264,15 +255,26 @@ void MainWindow::dataProccesing(pointsDevices *listDevice)
             }
 
             if(beginGraph[numDevice] != true){
-                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->addData(X, *_listData[numDevice]);
+                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->addData(X, *_listData[numDevice]);
                  _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
                  _listGraph.at(numDevice)->replot();           // Отрисовываем график
+
             }
 
             if(_listData [numDevice]->size() >= WidthGraph){
-
-                GraphProcessingV2(numDevice, _listData [numDevice], 1000);
+                pen.setColor(QColor(0, 0, 100));
+                 pen.setWidth(1);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setPen(pen);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setData(X, *_listData[numDevice]);
+                GraphProcessingV2(numDevice,currentIndexGraph[numDevice], _listData [numDevice], 10);
+                currentIndexGraph[numDevice]++;
+                if(currentIndexGraph[numDevice]==(maxGraphOnScene-1))
+                    currentIndexGraph[numDevice]=0;
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->data().clear();
                 _listData [numDevice]->clear();
+                pen.setColor(QColor(255, 0, 0));
+                 pen.setWidth(1);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setPen(pen);
             }
         }
 
@@ -286,21 +288,27 @@ void MainWindow::dataProccesing(pointsDevices *listDevice)
                 _listData [numDevice]->append(listDevice->ADC2.at(i));
 
             if(beginGraph[numDevice] != true){
-                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->addData(X, *_listData[numDevice]);
+                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->addData(X, *_listData[numDevice]);
                  _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
                  _listGraph.at(numDevice)->replot();           // Отрисовываем график
             }
 
             if(_listData [numDevice]->size() >= WidthGraph){
-
-                GraphProcessingV2(numDevice, _listData [numDevice], 100);
+                pen.setColor(QColor(0, 0, 100));
+                 pen.setWidth(1);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setPen(pen);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setData(X, *_listData[numDevice]);
+                GraphProcessingV2(numDevice,currentIndexGraph[numDevice], _listData [numDevice], 10);
+                currentIndexGraph[numDevice]++;
+                if(currentIndexGraph[numDevice]==(maxGraphOnScene-1))
+                    currentIndexGraph[numDevice]=0;
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->data().clear();
                 _listData [numDevice]->clear();
+                pen.setColor(QColor(255, 0, 0));
+                 pen.setWidth(1);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setPen(pen);
             }
-
-
-
         }
-
     }
     else if(flagRadButtons[numDevice] == sRadioAccX){
         for(int i=0; i < listDevice->accX.size(); i++){
@@ -310,15 +318,25 @@ void MainWindow::dataProccesing(pointsDevices *listDevice)
                 _listData [numDevice]->append(listDevice->accX.at(i));
 
             if(beginGraph[numDevice] != true){
-                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->addData(X, *_listData[numDevice]);
+                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->addData(X, *_listData[numDevice]);
                  _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
                  _listGraph.at(numDevice)->replot();           // Отрисовываем график
             }
 
             if(_listData [numDevice]->size() >= WidthGraph){
-                //beginGraph[numDevice] = true;
-                GraphProcessingV2(numDevice, _listData [numDevice], 100);
+                pen.setColor(QColor(0, 0, 100));
+                 pen.setWidth(1);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setPen(pen);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setData(X, *_listData[numDevice]);
+                GraphProcessingV2(numDevice,currentIndexGraph[numDevice], _listData [numDevice], 10);
+                currentIndexGraph[numDevice]++;
+                if(currentIndexGraph[numDevice]==(maxGraphOnScene-1))
+                    currentIndexGraph[numDevice]=0;
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->data().clear();
                 _listData [numDevice]->clear();
+                pen.setColor(QColor(255, 0, 0));
+                 pen.setWidth(1);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setPen(pen);
             }
         }
 
@@ -330,14 +348,26 @@ void MainWindow::dataProccesing(pointsDevices *listDevice)
             else
                 _listData [numDevice]->append(listDevice->accY.at(i));
 
-            if(_listData [numDevice]->size() >= WidthGraph){
-
-                GraphProcessingV2(numDevice, _listData [numDevice], 100);
-                _listData [numDevice]->clear();
+            if(beginGraph[numDevice] != true){
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->addData(X, *_listData[numDevice]);
+                _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
+                _listGraph.at(numDevice)->replot();           // Отрисовываем график
             }
-        }
-        if(beginGraph[numDevice] != true){
-             _listGraph.at(numDevice)->graph(0)->addData(X, *_listData[numDevice]);
+            if(_listData [numDevice]->size() >= WidthGraph){
+                pen.setWidth(1);
+                pen.setColor(QColor(0, 0, 100));
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setPen(pen);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setData(X, *_listData[numDevice]);
+                GraphProcessingV2(numDevice,currentIndexGraph[numDevice], _listData [numDevice], 10);
+                currentIndexGraph[numDevice]++;
+                if(currentIndexGraph[numDevice]==(maxGraphOnScene-1))
+                    currentIndexGraph[numDevice]=0;
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->data().clear();
+                _listData [numDevice]->clear();
+                pen.setColor(QColor(255, 0, 0));
+                pen.setWidth(1);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setPen(pen);
+            }
         }
     }
     else if(flagRadButtons[numDevice] == sRadioAccZ){
@@ -354,8 +384,19 @@ void MainWindow::dataProccesing(pointsDevices *listDevice)
             }
 
             if(_listData [numDevice]->size() >= WidthGraph){
-                GraphProcessingV2(numDevice, _listData [numDevice], 100);
+                pen.setColor(QColor(0, 0, 100));
+                 pen.setWidth(1);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setPen(pen);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setData(X, *_listData[numDevice]);
+                GraphProcessingV2(numDevice,currentIndexGraph[numDevice], _listData [numDevice], 10);
+                currentIndexGraph[numDevice]++;
+                if(currentIndexGraph[numDevice]==(maxGraphOnScene-1))
+                    currentIndexGraph[numDevice]=0;
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->data().clear();
                 _listData [numDevice]->clear();
+                 pen.setWidth(1);
+                pen.setColor(QColor(255, 0, 0));
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setPen(pen);
             }
         }
 
@@ -365,20 +406,30 @@ void MainWindow::dataProccesing(pointsDevices *listDevice)
             if(listShift_[numDevice]!=0)
                 listShift_[numDevice]--;
             else
-                _listData[numDevice]->append(listDevice->Tsens.at(i));
+                _listData [numDevice]->append(listDevice->Tsens.at(i));
 
             if(beginGraph[numDevice] != true){
-                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice]+1)->addData(X, *_listData[numDevice]);
+                 _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->addData(X, *_listData[numDevice]);
                  _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
                  _listGraph.at(numDevice)->replot();           // Отрисовываем график
             }
 
             if(_listData [numDevice]->size() >= WidthGraph){
-                GraphProcessingV2(numDevice, _listData [numDevice], 100);
+                pen.setColor(QColor(0, 0, 100));
+                 pen.setWidth(1);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setPen(pen);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setData(X, *_listData[numDevice]);
+                GraphProcessingV2(numDevice,currentIndexGraph[numDevice], _listData [numDevice], 10);
+                currentIndexGraph[numDevice]++;
+                if(currentIndexGraph[numDevice]==(maxGraphOnScene-1))
+                    currentIndexGraph[numDevice]=0;
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->data().clear();
                 _listData [numDevice]->clear();
+                pen.setColor(QColor(255, 0, 0));
+                 pen.setWidth(1);
+                _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->setPen(pen);
             }
         }
-
     }
 
     _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
@@ -567,7 +618,14 @@ void MainWindow::getSettingMeasure(pointsMeasure_ *settingPoint)
     for(int i=0; i <6; i++){
         listMeasure.append(new QVector<double>);
         array_graphCount[i] = settingPoint->graphCounter;
+        for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
+            _listGraph.at(i)->graph(cntGraph)->data()->clear();
+        for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
+            listColorGraph[i].at(cnt_list_graph_color)->mapValueGraph.clear();
     }
+    /* Тут отчистить предыдущие измерения */
+
+
     //X.resize(settingPoint->graphCounter);
     for (uint i = settingPoint->begin; i<(settingPoint->begin+settingPoint->graphCounter) ; i++)
         X.append(i);
@@ -585,9 +643,15 @@ void MainWindow::getSettingMeasure(pointsMeasure_ *settingPoint)
         }
     }
     file_global.close();
+    pen.setWidth(1);
+    pen.setColor(QColor(0,0,100));
+
+    for(int i=0; i <6; i++){
+        _listGraph.at(i)->graph(0)->setPen(pen);
+    }
     /* Построить сразу эти графики */
     for(int i=0; i <6; i++){
-        _listGraph.at(i)->graph()->setData(X, *listMeasure.at(i));
+        _listGraph.at(i)->graph(0)->setData(X, *listMeasure.at(i));
         _listGraph.at(i)->rescaleAxes();
         _listGraph.at(i)->replot();
     }
@@ -598,16 +662,17 @@ void MainWindow::settingsSlot()
 {
     m_cmdESP = SETTINGS_ESP;
     g_ = ui->lineG->text().toInt();
-    scale_ = ui->lineScale->text().toInt();
-    if(g_<2 || g_ > 8){
-        QMessageBox messageBox; messageBox.critical(0,"Ошибка", "G должно быть: 2-8");
+    hr_ = ui->lineHR->text().toInt();
+    if(g_<2 || g_ > 8  || (g_ % 2)){
+
+        QMessageBox messageBox; messageBox.critical(0,"Ошибка", "G должно быть: 2, 4 , 6, 8");
         return;
     }
-    if(scale_<2 || scale_ > 10){
-        QMessageBox messageBox; messageBox.critical(0,"Ошибка", "Шаг должно быть: 2-10");
+    if(hr_<0 || hr_ > 1){
+        QMessageBox messageBox; messageBox.critical(0,"Ошибка", "HR должно быть: 0 или 1");
         return;
     }
-    emit cmdEspALL(m_cmdESP, g_, scale_ );
+    emit cmdEspALL(m_cmdESP, g_, hr_ );
 }
 
 void MainWindow::startSlot()
@@ -621,7 +686,8 @@ void MainWindow::startSlot()
     ui->lineShift->setEnabled(false);
     ui->lineWidth->setEnabled(false);
     ui->pbChangeShift->setEnabled(false);
-    emit cmdEspALL(m_cmdESP, g_, scale_ );
+    connect(_server, SIGNAL(newData(pointsDevices*)), this, SLOT(dataProccesing(pointsDevices*)));
+    emit cmdEspALL(m_cmdESP, g_, hr_ );
 }
 void MainWindow::stopSlot()
 {
@@ -631,7 +697,7 @@ void MainWindow::stopSlot()
     ui->pbChangeShift->setEnabled(true);
 
     disconnect(_server, SIGNAL(newData(pointsDevices*)), this, SLOT(dataProccesing(pointsDevices*)));
-    emit cmdEspALL(m_cmdESP, g_, scale_ );
+    emit cmdEspALL(m_cmdESP, g_, hr_ );
 }
 
 void MainWindow::searchSlot()
@@ -644,26 +710,28 @@ void MainWindow::initGraphics()
 
     /* Set width Pen and set Color */
     pen.setWidth(1);
-    pen.setColor(QColor(0, 0, 100));
+    pen.setColor(QColor(255, 0, 0));
 
     for(int i=0; i<_devNumber; i++){
-        _listGraph.at(i)->addGraph(); // blue line
-        _listGraph.at(i)->graph(maxCountGraphics_)->setPen(pen);
+        for(int cntGraph=0; cntGraph < maxGraphOnScene; cntGraph++){
+            _listGraph.at(i)->addGraph(); // blue line
+            _listGraph.at(i)->graph(cntGraph)->setPen(pen);
+        }
 
-        mColorMap1 = new QCPColorMap(_listGraph.at(i)->xAxis, _listGraph.at(i)->yAxis);
-        //mColorMap1->rescaleDataRange(true);
+        mColorMap1 = new QCPColorMap(_listGraph.at(i)->xAxis, _listGraph.at(i)->yAxis2);
         //mColorMap1->data()->setRange(QCPRange(0, 50), QCPRange(0, 1));
         mColorMap1->data()->setSize(0, 1);
         mColorMap1->setInterpolate(0);
         mColorScale1 = new QCPColorScale(_listGraph.at(i));
+        //mColorScale1->rescaleDataRange(true);
         _listGraph.at(i)->plotLayout()->addElement(0, 1, mColorScale1);
         mColorMap1->setColorScale(mColorScale1);
 
         QCPColorGradient *mGradient = new QCPColorGradient();
         mColorMap1->setGradient(mGradient->gpJet );
         mGradient->setLevelCount(20);
-        mColorMap1->setDataRange(QCPRange(1, maxCountGraphics_));   //range тепловой карты
-
+        mColorMap1->setDataRange(QCPRange(1, maxColorGraphics_));   //range тепловой карты
+        //mColorMap1->rescaleDataRange(true);
         _listGraph.at(i)->rescaleAxes();
         _listGraph.at(i)->replot();
 
@@ -679,30 +747,30 @@ void MainWindow::initGraphics()
     }
 }
 
-void MainWindow::ReinitGraphic(int numDev)
-{
-    _listGraph.at(numDev)->clearGraphs();
+//void MainWindow::ReinitGraphic(int numDev)
+//{
+//    _listGraph.at(numDev)->clearGraphs();
 
-    _listGraph.at(numDev)->addGraph(); // blue line
-    _listGraph.at(numDev)->graph(maxCountGraphics_)->setPen(QPen(QColor(0, 0, 100)));
+//    _listGraph.at(numDev)->addGraph(); // blue line
+//    _listGraph.at(numDev)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
 
-    mColorMap1 = new QCPColorMap(_listGraph.at(numDev)->xAxis, _listGraph.at(numDev)->yAxis);
-    mColorMap1->rescaleDataRange(true);
-    //mColorMap1->data()->setRange(QCPRange(0, 50), QCPRange(0, 1));
-    mColorMap1->data()->setSize(0, 5);
-    mColorMap1->setInterpolate(0);
-    mColorScale1 = new QCPColorScale(_listGraph.at(numDev));
-    _listGraph.at(numDev)->plotLayout()->addElement(0, 1, mColorScale1);
-    mColorMap1->setColorScale(mColorScale1);
+//    mColorMap1 = new QCPColorMap(_listGraph.at(numDev)->xAxis, _listGraph.at(numDev)->yAxis);
+//    mColorMap1->rescaleDataRange(true);
+//    //mColorMap1->data()->setRange(QCPRange(0, 50), QCPRange(0, 1));
+//    mColorMap1->data()->setSize(0, 5);
+//    mColorMap1->setInterpolate(0);
+//    mColorScale1 = new QCPColorScale(_listGraph.at(numDev));
+//    _listGraph.at(numDev)->plotLayout()->addElement(0, 1, mColorScale1);
+//    mColorMap1->setColorScale(mColorScale1);
 
-    QCPColorGradient *mGradient = new QCPColorGradient();
-    mColorMap1->setGradient(mGradient->gpJet );
-    mGradient->setLevelCount(20);
-    mColorMap1->setDataRange(QCPRange(0, maxCountGraphics_));   //range тепловой карты
+//    QCPColorGradient *mGradient = new QCPColorGradient();
+//    mColorMap1->setGradient(mGradient->gpJet );
+//    mGradient->setLevelCount(20);
+//    mColorMap1->setDataRange(QCPRange(0, maxColorGraphics_));   //range тепловой карты
 
-    _listGraph.at(numDev)->rescaleAxes();
-    _listGraph.at(numDev)->replot();
-}
+//    _listGraph.at(numDev)->rescaleAxes();
+//    _listGraph.at(numDev)->replot();
+//}
 
 void MainWindow::initListMeasure()
 {
@@ -710,9 +778,13 @@ void MainWindow::initListMeasure()
     if(flagRadButtons.count()){
         flagRadButtons.clear();
         X.clear();
-        for(int i=0; i < _devNumber; i++){
-            delete _listData.at(i);
-            delete vecCntGraph_.at(i);
+        for(int devNum=0; devNum < _devNumber; devNum++){
+            delete _listData.at(devNum);
+            delete vecCntGraph_.at(devNum);
+//            for(int i=0; i <maxGraphOnScene; i++ ){
+//                _listGraph[devNum]->graph(i)->data().clear();
+//            }
+//             _listGraph[devNum]->replot();
         }
         vecCntGraph_.clear();
     }
@@ -725,11 +797,47 @@ void MainWindow::initListMeasure()
        _listData.append((new QVector <double>[WidthGraph]));
 
        vecCntGraph_.append(new QVector <uint8_t>);
-       vecCntGraph_[i]->resize(maxCountGraphics_+1);
-       currentIndexGraph[i] = -1;
+       vecCntGraph_[i]->resize(maxGraphOnScene+1);
+       currentIndexGraph[i] = 0;
        beginGraph[i] = false;
     }
     for(int i=0; i < WidthGraph; i++) X.append(i);
+}
+
+void MainWindow::initColorGraphs()
+{
+    pen.setWidth(4);
+
+    for (int cnt_cstPlot=0; cnt_cstPlot <  _listGraph.size(); cnt_cstPlot++){
+        listColorGraph.append(QList <graphColor*>());
+        for(uint32_t cnt = 0; cnt < maxColorGraphics_; cnt++){
+            listColorGraph[cnt_cstPlot].append(new graphColor());
+            listColorGraph[cnt_cstPlot].at(cnt)->color = wColorScale->getColor((double)cnt/maxColorGraphics_);
+            listColorGraph[cnt_cstPlot].at(cnt)->graph = _listGraph.at(cnt_cstPlot)->addGraph();
+            pen.setColor(listColorGraph[cnt_cstPlot].at(cnt)->color);
+            listColorGraph[cnt_cstPlot].at(cnt)->graph->setPen(pen);
+            listColorGraph[cnt_cstPlot].at(cnt)->graph->setLineStyle(QCPGraph::lsNone);              //точки не соединять
+            listColorGraph[cnt_cstPlot].at(cnt)->graph->setScatterStyle(QCPScatterStyle::ssDot);  //круглая точка
+        }
+    }
+}
+
+void MainWindow::deInitColorGraphs()
+{
+    for (int cnt_cstPlot=0; cnt_cstPlot <  _listGraph.size(); cnt_cstPlot++){
+
+        for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
+            _listGraph.at(cnt_cstPlot)->graph(cntGraph)->data()->clear();
+        for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
+            listColorGraph[cnt_cstPlot].at(cnt_list_graph_color)->mapValueGraph.clear();
+
+        for(uint32_t cnt = 0; cnt < maxColorGraphics_; cnt++){
+            listColorGraph[cnt_cstPlot].append(new graphColor());
+            delete listColorGraph[cnt_cstPlot].at(cnt);
+        }
+    }
+    listColorGraph.clear();
+
 }
 
 QString MainWindow::getTextRadBut(int id)
@@ -773,24 +881,48 @@ QString MainWindow::getTextRadBut(int id)
 
 void MainWindow::test_plot()
 {
-    for (int cnt_cstPlot=0; cnt_cstPlot <  _listGraph.size(); cnt_cstPlot++){
-        listColorGraph.append(QList <graphColor*>());
-        for(uint32_t cnt = 0; cnt < maxCountGraphics_; cnt++){
-            listColorGraph[cnt_cstPlot].append(new graphColor());
-            listColorGraph[cnt_cstPlot].at(cnt)->color = wColorScale->getColor((double)cnt/maxCountGraphics_);
-            listColorGraph[cnt_cstPlot].at(cnt)->graph = ui->customPlot1->addGraph();
-            listColorGraph[cnt_cstPlot].at(cnt)->graph->setPen(listColorGraph[cnt_cstPlot].at(cnt)->color);
-        }
+    QVector<double> X, y1, y2, y3;
+    X.append(0);
+    X.append(1);
+    X.append(1);
+    X.append(1);
+    X.append(1);
+    X.append(2);
+    X.append(3);
+    X.append(4);
+    X.append(5);
+    X.append(6);
+    X.append(7);
+    X.append(8);
+    for (int i=0; i < 10; i++) {
+        y1.append(10*std::sin((double)i/2));
+        y2.append(8);
+        y3.append(-8);
     }
-    /* При совпадении какой-либо точки, необходимо добавить ее в Map графика */
-    QMultiMap <int, int16_t> m_test;
-    m_test.insert(1, -100);
-    m_test.insert(1, 100);
-    m_test.insert(1, 4000);
-    m_test.insert(1, 5);
-    QList<int16_t> val = m_test.values(1);  //Список, содержащий количество точек
-    // qDebug() << m_test.contains(1);      //Проверяем, есть или нет такой ключ
-    //qDebug() << m_test.count(3);          // Сколько содержит того или иного
+    _listGraph.at(1)->graph(0)->addData(X, y1);
+    _listGraph.at(1)->graph(1)->addData(X, y2);
+    _listGraph.at(1)->rescaleAxes();
+    _listGraph.at(1)->replot();
+
+    GraphProcessingV2(1,1, &y2, 1.7);
+    _listGraph.at(1)->graph(2)->addData(X, y3);
+    _listGraph.at(1)->rescaleAxes();
+    _listGraph.at(1)->replot();
+
+    GraphProcessingV2(1,2, &y3, 1.7);
+    _listGraph.at(1)->rescaleAxes();
+    _listGraph.at(1)->replot();
+    for (int i=0; i<10; i++) {
+
+        qDebug() << _listGraph[1]->graph(0)->data()->at(i)->key << _listGraph[1]->graph(0)->data()->at(i)->value;
+    }
+    _listGraph[1]->graph(0)->data()->removeBefore(1);
+    qDebug() << "tyt";
+
+    for (int i=0; i<10; i++) {
+
+        qDebug() << _listGraph[1]->graph(0)->data()->at(i)->key << _listGraph[1]->graph(0)->data()->at(i)->value;
+    }
 }
 
 void MainWindow::setRadButId()
@@ -865,12 +997,12 @@ void MainWindow::on_pbSendESP_clicked()
     else if(cmd == "SETTINGS"){
         m_cmdESP = SETTINGS_ESP;
         g_ = ui->lineG->text().toInt();
-        scale_ = ui->lineScale->text().toInt();
+        hr_ = ui->lineHR->text().toInt();
         if(g_<2 || g_ > 8){
             QMessageBox messageBox; messageBox.critical(0,"Ошибка", "G должно быть: 2-8");
             return;
         }
-        if(scale_<2 || scale_ > 10){
+        if(hr_< 0 || hr_ > 1){
             QMessageBox messageBox; messageBox.critical(0,"Ошибка", "Шаг должно быть: 2-10");
             return;
         }
@@ -879,7 +1011,7 @@ void MainWindow::on_pbSendESP_clicked()
     else if(cmd == "SEARCH DEVICE"){
         m_cmdESP = SEARCH_ESP;
     }
-    emit cmdEspALL(m_cmdESP, g_, scale_ );
+    emit cmdEspALL(m_cmdESP, g_, hr_ );
 
 
 }
@@ -889,8 +1021,8 @@ void MainWindow::changeStrRadBut(int idGroup, int numButton)
     _listData[idGroup]->clear();
     listShift_[idGroup] = shiftGraph;
     vecCntGraph_[idGroup]->clear();
-    vecCntGraph_[idGroup]->resize(maxCountGraphics_+1);
-    currentIndexGraph[idGroup] = -1;
+    vecCntGraph_[idGroup]->resize(maxGraphOnScene+1);
+    currentIndexGraph[idGroup] = 0;
 
     beginGraph[idGroup] = false;
 
@@ -898,49 +1030,75 @@ void MainWindow::changeStrRadBut(int idGroup, int numButton)
     case 0:
         flagRadButtons[idGroup] = sRadioADC1;
         _listGraph.at(idGroup)->yAxis->setLabel( "ADC1" );
-        _listGraph.at(idGroup)->clearGraphs();
-        _listGraph.at(idGroup)->addGraph(); // blue line
-        _listGraph.at(idGroup)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
+        for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
+            _listGraph.at(idGroup)->graph(cntGraph)->data()->clear();
+        for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
+            listColorGraph[idGroup].at(cnt_list_graph_color)->mapValueGraph.clear();
+        pen.setColor(QColor(255, 0, 0));
+        pen.setWidth(1);
+        _listGraph.at(idGroup)->graph(0)->setPen(pen);
+
         break;
 
     case 1:
         flagRadButtons[idGroup] = sRadioADC2;
         _listGraph.at(idGroup)->yAxis->setLabel( "ADC2" );
-        _listGraph.at(idGroup)->clearGraphs();
-        _listGraph.at(idGroup)->addGraph(); // blue line
-        _listGraph.at(idGroup)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
+        for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
+            _listGraph.at(idGroup)->graph(cntGraph)->data()->clear();
+        for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
+            listColorGraph[idGroup].at(cnt_list_graph_color)->mapValueGraph.clear();
+        pen.setColor(QColor(255, 0, 0));
+        pen.setWidth(1);
+        _listGraph.at(idGroup)->graph(0)->setPen(pen);
         break;
 
     case 2:
         flagRadButtons[idGroup] = sRadioAccX;
         _listGraph.at(idGroup)->yAxis->setLabel( "AccX" );
-        _listGraph.at(idGroup)->clearGraphs();
-        _listGraph.at(idGroup)->addGraph(); // blue line
-        _listGraph.at(idGroup)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
+        for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
+            _listGraph.at(idGroup)->graph(cntGraph)->data()->clear();
+        for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
+            listColorGraph[idGroup].at(cnt_list_graph_color)->mapValueGraph.clear();
+        pen.setColor(QColor(255, 0, 0));
+        pen.setWidth(1);
+        _listGraph.at(idGroup)->graph(0)->setPen(pen);
         break;
 
     case 3:
         flagRadButtons[idGroup] = sRadioAccY;
         _listGraph.at(idGroup)->yAxis->setLabel( "AccY" );
-        _listGraph.at(idGroup)->clearGraphs();
-        _listGraph.at(idGroup)->addGraph(); // blue line
-        _listGraph.at(idGroup)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
+        for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
+            _listGraph.at(idGroup)->graph(cntGraph)->data()->clear();
+        for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
+            listColorGraph[idGroup].at(cnt_list_graph_color)->mapValueGraph.clear();
+        pen.setColor(QColor(255, 0, 0));
+        pen.setWidth(1);
+        _listGraph.at(idGroup)->graph(0)->setPen(pen);
+
         break;
 
     case 4:
         flagRadButtons[idGroup] = sRadioAccZ;
         _listGraph.at(idGroup)->yAxis->setLabel( "AccZ" );
-        _listGraph.at(idGroup)->clearGraphs();
-        _listGraph.at(idGroup)->addGraph(); // blue line
-        _listGraph.at(idGroup)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
+        for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
+            _listGraph.at(idGroup)->graph(cntGraph)->data()->clear();
+        for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
+            listColorGraph[idGroup].at(cnt_list_graph_color)->mapValueGraph.clear();
+        pen.setColor(QColor(255, 0, 0));
+        pen.setWidth(1);
+        _listGraph.at(idGroup)->graph(0)->setPen(pen);
         break;
 
     case 5:
         flagRadButtons[idGroup] = sRadioTsens;
         _listGraph.at(idGroup)->yAxis->setLabel( "T" );
-        _listGraph.at(idGroup)->clearGraphs();
-        _listGraph.at(idGroup)->addGraph(); // blue line
-        _listGraph.at(idGroup)->graph(0)->setPen(QPen(QColor(0, 0, 100)));
+        for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
+            _listGraph.at(idGroup)->graph(cntGraph)->data()->clear();
+        for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
+            listColorGraph[idGroup].at(cnt_list_graph_color)->mapValueGraph.clear();
+        pen.setColor(QColor(255, 0, 0));
+        pen.setWidth(1);
+        _listGraph.at(idGroup)->graph(0)->setPen(pen);
         break;
     }
 }
@@ -979,6 +1137,8 @@ void MainWindow::on_pbChangeShift_clicked()
 {
     WidthGraph = ui->lineWidth->text().toUInt();
     shiftGraph = ui->lineShift->text().toUInt();
+    deInitColorGraphs();
+    initColorGraphs();
     initListMeasure();
 }
 

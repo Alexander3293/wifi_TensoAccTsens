@@ -145,7 +145,7 @@ void server::slotDataRead()
 }
 
 /* Header 3 bytes, 1 byte cmd. 1 setG, 1 setScale = 6 bytes */
-void server::cmdEspAllSlot(cmdESP cmd, uint setG, uint setScale)
+void server::cmdEspAllSlot(cmdESP cmd, uint setG, uint setHR)
 {
     QByteArray block;
     QDataStream out(&block, QIODevice::WriteOnly);
@@ -182,7 +182,7 @@ void server::cmdEspAllSlot(cmdESP cmd, uint setG, uint setScale)
     out.writeRawData(myHeader, 3);
     out << (quint8) cmd;
     out << (quint8) setG;
-    out << (quint8) setScale;
+    out << (quint8) setHR;
 
     _sok_udp->writeDatagram(block, QHostAddress::Broadcast, port_ );
 

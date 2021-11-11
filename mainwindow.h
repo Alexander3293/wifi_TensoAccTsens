@@ -52,16 +52,18 @@ private slots:
 
 private:
     int checkGraphics(const uint8_t devNum, QVector <double> *data, double accuracy);
-    void checkGraphicsV2(const uint8_t devNum, QVector<double> *data, const double accuracy);
-    void addColorGraphPoint(const uint8_t devNum, int keyX, double valYdata, const double accuracy);
+    void addColorGraphPoint(const uint8_t devNum,const int keyX, const double valYdata, const double accuracy);
     void GraphProcessing(const uint8_t numDev, QVector<double> *data, const double acc);
-    void GraphProcessingV2(const uint8_t numDev, QVector<double> *data, const double acc);
-    void initGraphics();
-    void ReinitGraphic(int numDev);    
+    void GraphProcessingV2(const uint8_t numDev, const uint16_t numGraph, QVector<double> *data, const double acc);
+
     void setRadButId();
     void changeStrRadBut(int idGroup, int numButton);
     void test_plot();
+    void initGraphics();
+    void ReinitGraphic(int numDev);
     void initListMeasure();         //инициализация множества массивов, где хранятся данные
+    void initColorGraphs();
+    void deInitColorGraphs();
     QString getTextRadBut(int);
 
     Ui::MainWindow *ui;
@@ -75,7 +77,7 @@ private:
     uint16_t WidthGraph;
     uint16_t shiftGraph;
     uint8_t g_;
-    uint8_t scale_;
+    uint8_t hr_;
 
     QList<QVector<double>*> _listData;  //Тут хранятся данные с 6 графиков для построения
     QVector<uint> listShift_;
@@ -93,7 +95,8 @@ private:
     QList<QCustomPlot* > _listGraph;
     QList<QVector<uint8_t>*> vecCntGraph_;//содержит количество повторений графиков
     int currentIndexGraph[6];
-    uint maxCountGraphics_;              //максимальное количество графиков
+    uint maxColorGraphics_;              //количество графиков для цвета
+    int maxGraphOnScene;               //Количестов графиков для построения
     double accuracyCompare_;             //точность сравнения
     bool beginGraph[6];
     QList <QList <graphColor*>> listColorGraph; //list с цветами графиков по 256 вкаждом из 6 графиков

@@ -58,6 +58,6 @@ QColor ColorScale::getColor(double value)
     int r = (int)(ratio*startPoint.red() + (1-ratio)*endPoint.red());
     int g = (int)(ratio*startPoint.green() + (1-ratio)*endPoint.green());
     int b = (int)(ratio*startPoint.blue() + (1-ratio)*endPoint.blue());
-    qDebug() << r << g << b;
+    //qDebug() << r << g << b;
     return QColor::fromRgb(r,g,b);;
 }

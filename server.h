@@ -42,7 +42,7 @@ public:
 public slots:
 
     void slotDataRead();
-    void cmdEspAllSlot(cmdESP cmd, uint setG, uint setScale);
+    void cmdEspAllSlot(cmdESP cmd, uint setG, uint setHR);
 signals:
     void newData(pointsDevices* data);
 private:
