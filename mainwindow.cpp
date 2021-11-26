@@ -93,7 +93,7 @@ MainWindow::MainWindow(QWidget *parent)
     /* TCP server */
     _server = new server();
     _server->initUDP();
-    connect(_server, SIGNAL(newData(pointsDevices*)), this, SLOT(dataProccesing(pointsDevices*)));
+    disconnect(_server, SIGNAL(newData(pointsDevices*)), this, SLOT(dataProccesing(pointsDevices*)));
     connect(this, SIGNAL(cmdEspALL(cmdESP, uint, uint)), _server, SLOT(cmdEspAllSlot(cmdESP, uint, uint)));
     fileUI = new fileForm();
     //fileUI->show();
@@ -249,7 +249,6 @@ void MainWindow::dataProccesing(pointsDevices *listDevice)
 
             if(listShift_[numDevice]!=0)
                 listShift_[numDevice]--;
-
             else{
                 _listData [numDevice]->append(listDevice->ADC1.at(i));
             }
@@ -258,9 +257,7 @@ void MainWindow::dataProccesing(pointsDevices *listDevice)
                  _listGraph.at(numDevice)->graph(currentIndexGraph[numDevice])->addData(X, *_listData[numDevice]);
                  _listGraph.at(numDevice)->rescaleAxes();      // Масштабируем график по данным
                  _listGraph.at(numDevice)->replot();           // Отрисовываем график
-
             }
-
             if(_listData [numDevice]->size() >= WidthGraph){
                 pen.setColor(QColor(0, 0, 100));
                  pen.setWidth(1);
@@ -682,7 +679,6 @@ void MainWindow::startSlot()
     WidthGraph = ui->lineWidth->text().toUInt();
     shiftGraph = ui->lineShift->text().toUInt();
     initListMeasure();
-
     ui->lineShift->setEnabled(false);
     ui->lineWidth->setEnabled(false);
     ui->pbChangeShift->setEnabled(false);
@@ -779,13 +775,15 @@ void MainWindow::initListMeasure()
         flagRadButtons.clear();
         X.clear();
         for(int devNum=0; devNum < _devNumber; devNum++){
-            delete _listData.at(devNum);
-            delete vecCntGraph_.at(devNum);
+            //delete vecCntGraph_.first();
+            //delete _listData.first();
+
 //            for(int i=0; i <maxGraphOnScene; i++ ){
 //                _listGraph[devNum]->graph(i)->data().clear();
 //            }
 //             _listGraph[devNum]->replot();
         }
+        _listData.clear();  //Утечка памяти
         vecCntGraph_.clear();
     }
 
@@ -881,48 +879,7 @@ QString MainWindow::getTextRadBut(int id)
 
 void MainWindow::test_plot()
 {
-    QVector<double> X, y1, y2, y3;
-    X.append(0);
-    X.append(1);
-    X.append(1);
-    X.append(1);
-    X.append(1);
-    X.append(2);
-    X.append(3);
-    X.append(4);
-    X.append(5);
-    X.append(6);
-    X.append(7);
-    X.append(8);
-    for (int i=0; i < 10; i++) {
-        y1.append(10*std::sin((double)i/2));
-        y2.append(8);
-        y3.append(-8);
-    }
-    _listGraph.at(1)->graph(0)->addData(X, y1);
-    _listGraph.at(1)->graph(1)->addData(X, y2);
-    _listGraph.at(1)->rescaleAxes();
-    _listGraph.at(1)->replot();
 
-    GraphProcessingV2(1,1, &y2, 1.7);
-    _listGraph.at(1)->graph(2)->addData(X, y3);
-    _listGraph.at(1)->rescaleAxes();
-    _listGraph.at(1)->replot();
-
-    GraphProcessingV2(1,2, &y3, 1.7);
-    _listGraph.at(1)->rescaleAxes();
-    _listGraph.at(1)->replot();
-    for (int i=0; i<10; i++) {
-
-        qDebug() << _listGraph[1]->graph(0)->data()->at(i)->key << _listGraph[1]->graph(0)->data()->at(i)->value;
-    }
-    _listGraph[1]->graph(0)->data()->removeBefore(1);
-    qDebug() << "tyt";
-
-    for (int i=0; i<10; i++) {
-
-        qDebug() << _listGraph[1]->graph(0)->data()->at(i)->key << _listGraph[1]->graph(0)->data()->at(i)->value;
-    }
 }
 
 void MainWindow::setRadButId()

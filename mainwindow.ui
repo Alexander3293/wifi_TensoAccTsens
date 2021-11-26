@@ -913,7 +913,7 @@
           </sizepolicy>
          </property>
          <property name="text">
-          <string>50</string>
+          <string>500</string>
          </property>
          <property name="alignment">
           <set>Qt::AlignCenter</set>
@@ -1171,11 +1171,11 @@
  <resources/>
  <connections/>
  <buttongroups>
-  <buttongroup name="buttonGroup"/>
-  <buttongroup name="buttonGroup_2"/>
-  <buttongroup name="buttonGroup_4"/>
   <buttongroup name="buttonGroup_5"/>
+  <buttongroup name="buttonGroup_4"/>
   <buttongroup name="buttonGroup_3"/>
+  <buttongroup name="buttonGroup"/>
   <buttongroup name="buttonGroup_6"/>
+  <buttongroup name="buttonGroup_2"/>
  </buttongroups>
 </ui>

@@ -15,19 +15,19 @@ server::server(QObject *parent) : QObject(parent)
       myHeader[2] = 0xed;
 
       /*create file, to write data from ESP */
-      logFileName  = QString("D:/test_server/Log_%1__%2.txt")
-              .arg(QDate::currentDate().toString("yyyy_MM_dd"))
-              .arg(QTime::currentTime().toString("hh_mm_ss_zzz"));
+//      logFileName  = QString("D:/test_server/Log_%1__%2.txt")
+//              .arg(QDate::currentDate().toString("yyyy_MM_dd"))
+//              .arg(QTime::currentTime().toString("hh_mm_ss_zzz"));
 
-      if(file_global.isOpen())
-          file_global.close();
+//      if(file_global.isOpen())
+//          file_global.close();
 
-      file_global.setFileName(logFileName);
-      if (!file_global.open(QIODevice::Append |QIODevice::WriteOnly))
-      {
-          qDebug() << "Ошибка при открытии файла";
-          return;
-      }
+//      file_global.setFileName(logFileName);
+//      if (!file_global.open(QIODevice::Append |QIODevice::WriteOnly))
+//      {
+//          qDebug() << "Ошибка при открытии файла";
+//          return;
+//      }
 
 
 }
@@ -75,8 +75,10 @@ void server::slotDataRead()
 
         QString str_data = datagram.toHex();
 
-        file_global.write(str_data.toUtf8());       //Write to the File
-        file_global.flush();
+        if(file_global.isOpen()){
+            file_global.write(str_data.toUtf8());       //Write to the File
+            file_global.flush();
+        }
 
         QString tmp_str;
 
@@ -169,6 +171,7 @@ void server::cmdEspAllSlot(cmdESP cmd, uint setG, uint setHR)
 
 
     else if(cmd == STOP_ESP){
+        file_global.flush();
         file_global.close();
     }
 
