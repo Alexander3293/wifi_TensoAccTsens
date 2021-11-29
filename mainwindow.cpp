@@ -608,23 +608,49 @@ void MainWindow::getSettingMeasure(pointsMeasure_ *settingPoint)
     QVector<double> X;
     bool ok;
     uint8_t dev_num = 0;
-    uint16_t mes = 0;
+    int16_t mes = 0;
     QString tmp;
     uint array_graphCount[6];
+    uint32_t array_graphTmpBegin[6];
     QList<QVector<double>*> listMeasure;
     for(int i=0; i <6; i++){
         listMeasure.append(new QVector<double>);
         array_graphCount[i] = settingPoint->graphCounter;
+        array_graphTmpBegin[i] = 0;
         for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
             _listGraph.at(i)->graph(cntGraph)->data()->clear();
         for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
             listColorGraph[i].at(cnt_list_graph_color)->mapValueGraph.clear();
     }
     /* Тут отчистить предыдущие измерения */
+    QFile f_adc1, f_adc2, f_accX, f_accY, f_accZ, f_Tsens;
+    f_adc1.setFileName("ADC1.txt");
+    f_adc1.open(QIODevice::WriteOnly|QIODevice::Text);
+    QTextStream streamADC1( &f_adc1 );
+
+    f_adc2.setFileName("ADC2.txt");
+    f_adc2.open(QIODevice::WriteOnly|QIODevice::Text);
+    QTextStream streamADC2( &f_adc2 );
+
+    f_accX.setFileName("AccX.txt");
+    f_accX.open(QIODevice::WriteOnly|QIODevice::Text);
+    QTextStream streamAccX( &f_accX );
+
+    f_accY.setFileName("AccY.txt");
+    f_accY.open(QIODevice::WriteOnly|QIODevice::Text);
+    QTextStream streamAccY( &f_accY );
+
+    f_accZ.setFileName("AccZ.txt");
+    f_accZ.open(QIODevice::WriteOnly|QIODevice::Text);
+    QTextStream streamAccZ( &f_accZ );
+
+    f_Tsens.setFileName("Tsens.txt");
+    f_Tsens.open(QIODevice::WriteOnly|QIODevice::Text);
+    QTextStream streamTsens (&f_Tsens );
 
 
     //X.resize(settingPoint->graphCounter);
-    for (uint i = settingPoint->begin; i<(settingPoint->begin+settingPoint->graphCounter) ; i++)
+    for (uint i = settingPoint->begin; i<(settingPoint->graphCounter + settingPoint->begin) ; i++)
         X.append(i);
 
     while(!file_global.atEnd()){
@@ -633,25 +659,114 @@ void MainWindow::getSettingMeasure(pointsMeasure_ *settingPoint)
             dev_num = text.midRef(6, 2).toUInt(&ok, 16) -1;
             if(array_graphCount[dev_num] == 0)
                 continue;
-            tmp = text.mid(8+settingPoint->modX.at(dev_num)*4, 4); //8 - шапка, 4*.. сдвиг необходимого измерения
-            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);  ;
-            listMeasure.at(dev_num)->append(mes);
-            array_graphCount[dev_num]--;
+            tmp = text.mid(8+0*4, 4); /*ADC 1*/
+            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
+            if(mes & 0x1000)
+                mes |= 0xE000;
+            streamADC1 << mes << '\n';
+
+            tmp = text.mid(8+1*4, 4); /*ADC 2*/
+            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
+            if(mes & 0x1000)
+                mes |= 0xE000;
+            streamADC2 << QString::number(mes, 10) << '\n';
+
+            tmp = text.mid(8+2*4, 4); /*AccX*/
+            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
+            streamAccX << QString::number(mes, 10) << '\n';
+
+            tmp = text.mid(8+3*4, 4); /*AccY*/
+            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
+            streamAccY << QString::number(mes, 10) << '\n';
+
+            tmp = text.mid(8+4*4, 4); /*AccZ*/
+            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
+            streamAccZ << QString::number(mes, 10) << '\n';
+
+            tmp = text.mid(8+5*4, 4); /*Tsens*/
+            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
+            streamTsens << QString::number(mes, 10) << '\n';
         }
     }
-    file_global.close();
-    pen.setWidth(1);
-    pen.setColor(QColor(0,0,100));
+   f_adc1.flush();
+   f_adc1.close();
 
-    for(int i=0; i <6; i++){
-        _listGraph.at(i)->graph(0)->setPen(pen);
-    }
-    /* Построить сразу эти графики */
-    for(int i=0; i <6; i++){
-        _listGraph.at(i)->graph(0)->setData(X, *listMeasure.at(i));
-        _listGraph.at(i)->rescaleAxes();
-        _listGraph.at(i)->replot();
-    }
+   f_adc2.flush();
+   f_adc2.close();
+
+   f_accX.flush();
+   f_accX.close();
+
+   f_accY.flush();
+   f_accY.close();
+
+   f_accZ.flush();
+   f_accZ.close();
+
+   f_Tsens.flush();
+   f_Tsens.close();
+
+//    while(!file_global.atEnd()){
+//        QString text = file_global.read(32);
+//        if(text.startsWith("ed00ff", Qt::CaseInsensitive)){
+//            dev_num = text.midRef(6, 2).toUInt(&ok, 16) -1;
+//            if(array_graphCount[dev_num] == 0)
+//                continue;
+//            tmp = text.mid(8+settingPoint->modX.at(dev_num)*4, 4); //8 - шапка, 4*.. сдвиг необходимого измерения
+//            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
+
+//            if(array_graphTmpBegin[dev_num] < settingPoint->begin){
+//                array_graphTmpBegin[dev_num]++;
+//                continue;
+//            }
+
+//            switch(settingPoint->modX.at(dev_num)){
+//            case 0: //ADC1
+//                if(mes & 0x1000)
+//                    mes |= 0xE000;
+//                qDebug() << "tyt";
+//                break;
+//            case 1: //ADC2
+//                if(mes & 0x1000)
+//                    mes |= 0xE000;
+//                break;
+//            case 2: //AccX
+////                if(mes & 0x800)
+////                    mes |= 0xF000;
+//                break;
+//            case 3: //AccY
+////                if(mes & 0x800)
+////                    mes |= 0xF000;
+//                break;
+//            case 4: //AccZ
+////                if(mes & 0x800)
+////                    mes |= 0xF000;
+//                break;
+//            case 5: //Tsense
+//                if(mes & 0x1000)
+//                    mes |= 0xE000;
+//                break;
+
+//            }
+
+//            listMeasure.at(dev_num)->append(mes);
+//            array_graphCount[dev_num]--;
+//        }
+//    }
+    file_global.close();
+//    pen.setWidth(1);
+//    pen.setColor(QColor(0,0,100));
+
+//    for(int i=0; i <6; i++){
+//        _listGraph.at(i)->graph(0)->setPen(pen);
+//    }
+//    /* Построить сразу эти графики */
+//    for(int i=0; i <6; i++){
+//        _listGraph.at(i)->graph(0)->setData(X, *listMeasure.at(i));
+//        _listGraph.at(i)->rescaleAxes();
+//        _listGraph.at(i)->xAxis->setRange(settingPoint->begin, settingPoint->graphCounter + settingPoint->begin);
+//        _listGraph.at(i)->replot();
+//    }
 }
 
 
@@ -988,7 +1103,7 @@ void MainWindow::changeStrRadBut(int idGroup, int numButton)
         flagRadButtons[idGroup] = sRadioADC1;
         _listGraph.at(idGroup)->yAxis->setLabel( "ADC1" );
         for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
-            _listGraph.at(idGroup)->graph(cntGraph)->data()->clear();
+            _listGraph.at(idGroup)->graph(cntGraph)->data().data()->clear();
         for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
             listColorGraph[idGroup].at(cnt_list_graph_color)->mapValueGraph.clear();
         pen.setColor(QColor(255, 0, 0));
@@ -1001,7 +1116,7 @@ void MainWindow::changeStrRadBut(int idGroup, int numButton)
         flagRadButtons[idGroup] = sRadioADC2;
         _listGraph.at(idGroup)->yAxis->setLabel( "ADC2" );
         for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
-            _listGraph.at(idGroup)->graph(cntGraph)->data()->clear();
+            _listGraph.at(idGroup)->graph(cntGraph)->data().data()->clear();
         for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
             listColorGraph[idGroup].at(cnt_list_graph_color)->mapValueGraph.clear();
         pen.setColor(QColor(255, 0, 0));
@@ -1013,7 +1128,7 @@ void MainWindow::changeStrRadBut(int idGroup, int numButton)
         flagRadButtons[idGroup] = sRadioAccX;
         _listGraph.at(idGroup)->yAxis->setLabel( "AccX" );
         for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
-            _listGraph.at(idGroup)->graph(cntGraph)->data()->clear();
+            _listGraph.at(idGroup)->graph(cntGraph)->data().data()->clear();
         for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
             listColorGraph[idGroup].at(cnt_list_graph_color)->mapValueGraph.clear();
         pen.setColor(QColor(255, 0, 0));
@@ -1025,7 +1140,7 @@ void MainWindow::changeStrRadBut(int idGroup, int numButton)
         flagRadButtons[idGroup] = sRadioAccY;
         _listGraph.at(idGroup)->yAxis->setLabel( "AccY" );
         for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
-            _listGraph.at(idGroup)->graph(cntGraph)->data()->clear();
+            _listGraph.at(idGroup)->graph(cntGraph)->data().data()->clear();
         for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
             listColorGraph[idGroup].at(cnt_list_graph_color)->mapValueGraph.clear();
         pen.setColor(QColor(255, 0, 0));
@@ -1038,7 +1153,7 @@ void MainWindow::changeStrRadBut(int idGroup, int numButton)
         flagRadButtons[idGroup] = sRadioAccZ;
         _listGraph.at(idGroup)->yAxis->setLabel( "AccZ" );
         for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
-            _listGraph.at(idGroup)->graph(cntGraph)->data()->clear();
+            _listGraph.at(idGroup)->graph(cntGraph)->data().data()->clear();
         for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
             listColorGraph[idGroup].at(cnt_list_graph_color)->mapValueGraph.clear();
         pen.setColor(QColor(255, 0, 0));
@@ -1050,7 +1165,7 @@ void MainWindow::changeStrRadBut(int idGroup, int numButton)
         flagRadButtons[idGroup] = sRadioTsens;
         _listGraph.at(idGroup)->yAxis->setLabel( "T" );
         for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
-            _listGraph.at(idGroup)->graph(cntGraph)->data()->clear();
+            _listGraph.at(idGroup)->graph(cntGraph)->data().data()->clear();
         for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
             listColorGraph[idGroup].at(cnt_list_graph_color)->mapValueGraph.clear();
         pen.setColor(QColor(255, 0, 0));
@@ -1094,6 +1209,14 @@ void MainWindow::on_pbChangeShift_clicked()
 {
     WidthGraph = ui->lineWidth->text().toUInt();
     shiftGraph = ui->lineShift->text().toUInt();
+
+    for(uint idGroup=0; idGroup < 6; idGroup++){
+        for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
+            _listGraph.at(idGroup)->graph(cntGraph)->data().data()->clear();
+        _listGraph.at(idGroup)->rescaleAxes();
+        _listGraph.at(idGroup)->replot();
+    }
+
     deInitColorGraphs();
     initColorGraphs();
     initListMeasure();
