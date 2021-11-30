@@ -16,10 +16,6 @@ fileForm::fileForm(QWidget *parent) :
 
     for(int i=0; i < 6; i++)
         pointsMeasure.modX.append(0);   //Заполним нулями
-
-
-
-
 }
 
 fileForm::~fileForm()
@@ -57,8 +53,8 @@ void fileForm::on_pushButton_clicked()
         tmp_num = cmBoxProccessing(text_cmBox);
         pointsMeasure.modX[i] = tmp_num;
     }
-    pointsMeasure.begin = ui->lineEdBegin->text().toUInt();
-    pointsMeasure.graphCounter = ui->lineEdCount->text().toUInt();
+    pointsMeasure.beginMeas = ui->lineEdBegin->text().toInt();
+    pointsMeasure.endMeas = ui->lineEdCount->text().toInt();
     emit chooseMeasureModules(&pointsMeasure);
 
     this->close();

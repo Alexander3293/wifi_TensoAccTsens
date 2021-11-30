@@ -84,7 +84,6 @@ MainWindow::MainWindow(QWidget *parent)
     _listGraph.append(ui->customPlot5);
     _listGraph.append(ui->customPlot6);
 
-
     initGraphics();
     initColorGraphs();
     /* Init list measure */
@@ -103,9 +102,10 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
+    _listData.clear();
     delete ui;
-    for(int i=0; i < _devNumber; i++)
-       delete _listData.at(i);
+    //for(int i=0; i < _devNumber; i++)
+       //delete _listData.at(i);
 }
 
 void MainWindow::projMessage(QString textMessage)
@@ -577,6 +577,10 @@ void MainWindow::dataProccesing(pointsDevices *listDevice)
 //}
 void MainWindow::graphicSettings()
 {
+    if(file_global.isOpen())
+        file_global.close();
+    file_global.setFileName(fileName_);
+
     if (!file_global.open(QFile::ReadOnly|QFile::Text))
     {
         qDebug() << "Ошибка при открытии файла";
@@ -589,16 +593,136 @@ void MainWindow::graphicSettings()
 void MainWindow::openFile()
 {
     QString path_file = "D:/test_server";
-    QString file_name = QFileDialog::getOpenFileName(this, "Открыть файл с измерениями",
+    fileName_ = QFileDialog::getOpenFileName(this, "Открыть файл с измерениями",
                                                      path_file, "Txt File(*.txt)");
     if(file_global.isOpen())
         file_global.close();
-    file_global.setFileName(file_name);
-    if (!file_global.open(QFile::ReadOnly|QFile::Text))
-    {
+    file_global.setFileName(fileName_);
+    if (!file_global.open(QFile::ReadOnly|QFile::Text)){
         qDebug() << "Ошибка при открытии файла";
         return;
     }
+
+    uint8_t dev_num = 0;
+    int16_t mes = 0;
+    QString tmp;
+    bool ok;
+
+    /* Тут отчистить предыдущие измерения */
+    QList<QFile*> f_adc1, f_adc2, f_accX, f_accY, f_accZ, f_Tsens;
+
+    //QFile f_adc1, f_adc2, f_accX, f_accY, f_accZ, f_Tsens;
+    for (uint8_t i=0; i < 6;i++) {
+        f_adc1.append(new QFile);
+        f_adc1.at(i)->setFileName(QString("ADC1_%1.txt").arg(i));
+        f_adc1.at(i)->open(QIODevice::WriteOnly|QIODevice::Text);
+
+        f_adc2.append(new QFile);
+        f_adc2.at(i)->setFileName(QString("ADC2_%1.txt").arg(i));
+        f_adc2.at(i)->open(QIODevice::WriteOnly|QIODevice::Text);
+
+        f_accX.append(new QFile);
+        f_accX.at(i)->setFileName(QString("AccX_%1.txt").arg(i));
+        f_accX.at(i)->open(QIODevice::WriteOnly|QIODevice::Text);
+
+        f_accY.append(new QFile);
+        f_accY.at(i)->setFileName(QString("AccY_%1.txt").arg(i));
+        f_accY.at(i)->open(QIODevice::WriteOnly|QIODevice::Text);
+
+        f_accZ.append(new QFile);
+        f_accZ.at(i)->setFileName(QString("AccZ_%1.txt").arg(i));
+        f_accZ.at(i)->open(QIODevice::WriteOnly|QIODevice::Text);
+
+        f_Tsens.append(new QFile);
+        f_Tsens.at(i)->setFileName(QString("Tsens_%1.txt").arg(i));
+        f_Tsens.at(i)->open(QIODevice::WriteOnly|QIODevice::Text);
+
+    }
+
+    //X.resize(settingPoint->graphCounter);
+
+    QString str_;
+    //char n_ = '\n';
+    while(!file_global.atEnd()){
+        QString text = file_global.read(32);
+        if(text.startsWith("ed00ff", Qt::CaseInsensitive)){
+            dev_num = text.midRef(6, 2).toUInt(&ok, 16) -1;
+//            if(array_graphCount[dev_num] == 0)
+//                continue;
+            tmp = text.mid(8+0*4, 4); /*ADC 1*/
+            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
+            if(mes & 0x1000)
+                mes |= 0xE000;
+            str_ = QString::number(mes, 10) + '\n';
+            f_adc1.at(dev_num)->write(str_.toStdString().c_str());
+
+            tmp = text.mid(8+1*4, 4); /*ADC 2*/
+            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
+            if(mes & 0x1000)
+                mes |= 0xE000;
+            str_ = QString::number(mes, 10) + '\n';
+            f_adc2.at(dev_num)->write(str_.toStdString().c_str());
+
+            tmp = text.mid(8+2*4, 4); /*AccX*/
+            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
+            str_ = QString::number(mes, 10) + '\n';
+            f_accX.at(dev_num)->write(str_.toStdString().c_str());
+
+            tmp = text.mid(8+3*4, 4); /*AccY*/
+            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
+            QString str_ = QString::number(mes, 10) + '\n';
+            f_accY.at(dev_num)->write(str_.toStdString().c_str());
+
+            tmp = text.mid(8+4*4, 4); /*AccZ*/
+            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
+            str_ = QString::number(mes, 10) + '\n';
+            f_accZ.at(dev_num)->write(str_.toStdString().c_str());
+
+            tmp = text.mid(8+5*4, 4); /*Tsens*/
+            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
+            str_ = QString::number(mes, 10) + '\n';
+            f_Tsens.at(dev_num)->write(str_.toStdString().c_str());
+        }
+    }
+    for (uint8_t i=0; i < 6;i++) {
+        f_adc1.at(i)->flush();
+        f_adc1.at(i)->close();
+        if(f_adc1.at(i)->size() == 0)
+            if(!f_adc1.at(i)->remove())
+                qWarning() << "Error delete File";
+
+        f_adc2.at(i)->flush();
+        f_adc2.at(i)->close();
+        if(f_adc2.at(i)->size() == 0)
+            if(!f_adc2.at(i)->remove())
+                qWarning() << "Error delete File";
+
+        f_accX.at(i)->flush();
+        f_accX.at(i)->close();
+        if(f_accX.at(i)->size() == 0)
+            if(!f_accX.at(i)->remove())
+                qWarning() << "Error delete File";
+
+        f_accY.at(i)->flush();
+        f_accY.at(i)->close();
+        if(f_accY.at(i)->size() == 0)
+            if(!f_accY.at(i)->remove())
+                qWarning() << "Error delete File";
+
+        f_accZ.at(i)->flush();
+        f_accZ.at(i)->close();
+        if(f_accZ.at(i)->size() == 0)
+            if(!f_accZ.at(i)->remove())
+                qWarning() << "Error delete File";
+
+        f_Tsens.at(i)->flush();
+        f_Tsens.at(i)->close();
+        if(f_Tsens.at(i)->size() == 0)
+            if(!f_Tsens.at(i)->remove())
+                qWarning() << "Error delete File";
+    }
+    file_global.flush();
+    file_global.close();
 
     fileUI->show();
 }
@@ -607,6 +731,17 @@ void MainWindow::getSettingMeasure(pointsMeasure_ *settingPoint)
 {
     QVector<double> X;
     bool ok;
+
+    int32_t error = settingPoint->endMeas - settingPoint->beginMeas;
+    if(error <= 0){
+        QMessageBox messageBox;
+        messageBox.critical(0,"Ошибка", "Корректное значение введите");
+        return;
+    }
+
+    for (int i = settingPoint->beginMeas; i<(settingPoint->endMeas) ; i++)
+        X.append(i);
+
     uint8_t dev_num = 0;
     int16_t mes = 0;
     QString tmp;
@@ -615,43 +750,22 @@ void MainWindow::getSettingMeasure(pointsMeasure_ *settingPoint)
     QList<QVector<double>*> listMeasure;
     for(int i=0; i <6; i++){
         listMeasure.append(new QVector<double>);
-        array_graphCount[i] = settingPoint->graphCounter;
+        array_graphCount[i] = settingPoint->endMeas;
         array_graphTmpBegin[i] = 0;
         for(uint cntGraph=0; cntGraph < (maxGraphOnScene+maxColorGraphics_); cntGraph++)
             _listGraph.at(i)->graph(cntGraph)->data()->clear();
         for(uint cnt_list_graph_color=0; cnt_list_graph_color < maxColorGraphics_; cnt_list_graph_color++)
             listColorGraph[i].at(cnt_list_graph_color)->mapValueGraph.clear();
     }
-    /* Тут отчистить предыдущие измерения */
-    QFile f_adc1, f_adc2, f_accX, f_accY, f_accZ, f_Tsens;
-    f_adc1.setFileName("ADC1.txt");
-    f_adc1.open(QIODevice::WriteOnly|QIODevice::Text);
-    QTextStream streamADC1( &f_adc1 );
 
-    f_adc2.setFileName("ADC2.txt");
-    f_adc2.open(QIODevice::WriteOnly|QIODevice::Text);
-    QTextStream streamADC2( &f_adc2 );
-
-    f_accX.setFileName("AccX.txt");
-    f_accX.open(QIODevice::WriteOnly|QIODevice::Text);
-    QTextStream streamAccX( &f_accX );
-
-    f_accY.setFileName("AccY.txt");
-    f_accY.open(QIODevice::WriteOnly|QIODevice::Text);
-    QTextStream streamAccY( &f_accY );
-
-    f_accZ.setFileName("AccZ.txt");
-    f_accZ.open(QIODevice::WriteOnly|QIODevice::Text);
-    QTextStream streamAccZ( &f_accZ );
-
-    f_Tsens.setFileName("Tsens.txt");
-    f_Tsens.open(QIODevice::WriteOnly|QIODevice::Text);
-    QTextStream streamTsens (&f_Tsens );
-
-
-    //X.resize(settingPoint->graphCounter);
-    for (uint i = settingPoint->begin; i<(settingPoint->graphCounter + settingPoint->begin) ; i++)
-        X.append(i);
+if(file_global.isOpen())
+    file_global.close();
+file_global.setFileName(fileName_);
+if (!file_global.open(QFile::ReadOnly|QFile::Text))
+{
+    qDebug() << "Ошибка при открытии файла";
+    return;
+}
 
     while(!file_global.atEnd()){
         QString text = file_global.read(32);
@@ -659,114 +773,61 @@ void MainWindow::getSettingMeasure(pointsMeasure_ *settingPoint)
             dev_num = text.midRef(6, 2).toUInt(&ok, 16) -1;
             if(array_graphCount[dev_num] == 0)
                 continue;
-            tmp = text.mid(8+0*4, 4); /*ADC 1*/
+            tmp = text.mid(8+settingPoint->modX.at(dev_num)*4, 4); //8 - шапка, 4*.. сдвиг необходимого измерения
             mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
-            if(mes & 0x1000)
-                mes |= 0xE000;
-            streamADC1 << mes << '\n';
 
-            tmp = text.mid(8+1*4, 4); /*ADC 2*/
-            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
-            if(mes & 0x1000)
-                mes |= 0xE000;
-            streamADC2 << QString::number(mes, 10) << '\n';
+            if(array_graphTmpBegin[dev_num] < (uint32_t)settingPoint->endMeas){
+                array_graphTmpBegin[dev_num]++;
+                continue;
+            }
 
-            tmp = text.mid(8+2*4, 4); /*AccX*/
-            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
-            streamAccX << QString::number(mes, 10) << '\n';
+            switch(settingPoint->modX.at(dev_num)){
+            case 0: //ADC1
+                if(mes & 0x1000)
+                    mes |= 0xE000;
+                break;
+            case 1: //ADC2
+                if(mes & 0x1000)
+                    mes |= 0xE000;
+                break;
+            case 2: //AccX
+//                if(mes & 0x800)
+//                    mes |= 0xF000;
+                break;
+            case 3: //AccY
+//                if(mes & 0x800)
+//                    mes |= 0xF000;
+                break;
+            case 4: //AccZ
+//                if(mes & 0x800)
+//                    mes |= 0xF000;
+                break;
+            case 5: //Tsense
+                if(mes & 0x1000)
+                    mes |= 0xE000;
+                break;
 
-            tmp = text.mid(8+3*4, 4); /*AccY*/
-            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
-            streamAccY << QString::number(mes, 10) << '\n';
+            }
 
-            tmp = text.mid(8+4*4, 4); /*AccZ*/
-            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
-            streamAccZ << QString::number(mes, 10) << '\n';
-
-            tmp = text.mid(8+5*4, 4); /*Tsens*/
-            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
-            streamTsens << QString::number(mes, 10) << '\n';
+            listMeasure.at(dev_num)->append(mes);
+            array_graphCount[dev_num]--;
         }
     }
-   f_adc1.flush();
-   f_adc1.close();
-
-   f_adc2.flush();
-   f_adc2.close();
-
-   f_accX.flush();
-   f_accX.close();
-
-   f_accY.flush();
-   f_accY.close();
-
-   f_accZ.flush();
-   f_accZ.close();
-
-   f_Tsens.flush();
-   f_Tsens.close();
-
-//    while(!file_global.atEnd()){
-//        QString text = file_global.read(32);
-//        if(text.startsWith("ed00ff", Qt::CaseInsensitive)){
-//            dev_num = text.midRef(6, 2).toUInt(&ok, 16) -1;
-//            if(array_graphCount[dev_num] == 0)
-//                continue;
-//            tmp = text.mid(8+settingPoint->modX.at(dev_num)*4, 4); //8 - шапка, 4*.. сдвиг необходимого измерения
-//            mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
-
-//            if(array_graphTmpBegin[dev_num] < settingPoint->begin){
-//                array_graphTmpBegin[dev_num]++;
-//                continue;
-//            }
-
-//            switch(settingPoint->modX.at(dev_num)){
-//            case 0: //ADC1
-//                if(mes & 0x1000)
-//                    mes |= 0xE000;
-//                qDebug() << "tyt";
-//                break;
-//            case 1: //ADC2
-//                if(mes & 0x1000)
-//                    mes |= 0xE000;
-//                break;
-//            case 2: //AccX
-////                if(mes & 0x800)
-////                    mes |= 0xF000;
-//                break;
-//            case 3: //AccY
-////                if(mes & 0x800)
-////                    mes |= 0xF000;
-//                break;
-//            case 4: //AccZ
-////                if(mes & 0x800)
-////                    mes |= 0xF000;
-//                break;
-//            case 5: //Tsense
-//                if(mes & 0x1000)
-//                    mes |= 0xE000;
-//                break;
-
-//            }
-
-//            listMeasure.at(dev_num)->append(mes);
-//            array_graphCount[dev_num]--;
-//        }
-//    }
     file_global.close();
-//    pen.setWidth(1);
-//    pen.setColor(QColor(0,0,100));
+    pen.setWidth(1);
+    pen.setColor(QColor(0,0,100));
 
-//    for(int i=0; i <6; i++){
-//        _listGraph.at(i)->graph(0)->setPen(pen);
-//    }
-//    /* Построить сразу эти графики */
-//    for(int i=0; i <6; i++){
-//        _listGraph.at(i)->graph(0)->setData(X, *listMeasure.at(i));
-//        _listGraph.at(i)->rescaleAxes();
-//        _listGraph.at(i)->xAxis->setRange(settingPoint->begin, settingPoint->graphCounter + settingPoint->begin);
-//        _listGraph.at(i)->replot();
-//    }
+    for(int i=0; i <6; i++){
+        _listGraph.at(i)->graph(0)->setPen(pen);
+    }
+    /* Построить сразу эти графики */
+    for(int i=0; i <6; i++){
+        qDebug() << "data Size" << "X" << X.size() << "Y" << listMeasure.at(i)->size();
+        _listGraph.at(i)->graph(0)->setData(X, *listMeasure.at(i));
+        _listGraph.at(i)->rescaleAxes();
+        //_listGraph.at(i)->xAxis->setRange(settingPoint->begin, settingPoint->graphCounter);
+        _listGraph.at(i)->replot();
+    }
 }
 
 
@@ -780,10 +841,12 @@ void MainWindow::settingsSlot()
         QMessageBox messageBox; messageBox.critical(0,"Ошибка", "G должно быть: 2, 4 , 6, 8");
         return;
     }
-    if(hr_<0 || hr_ > 1){
-        QMessageBox messageBox; messageBox.critical(0,"Ошибка", "HR должно быть: 0 или 1");
+
+    if(hr_< 0 || hr_ > 1){
+        QMessageBox messageBox; messageBox.critical(0,"Ошибка", "Шаг должно быть: 0-1");
         return;
     }
+
     emit cmdEspALL(m_cmdESP, g_, hr_ );
 }
 
@@ -987,7 +1050,7 @@ QString MainWindow::getTextRadBut(int id)
 
         break;
     }
-    return "abcg";
+    return "Error";
 }
 
 
@@ -1075,7 +1138,7 @@ void MainWindow::on_pbSendESP_clicked()
             return;
         }
         if(hr_< 0 || hr_ > 1){
-            QMessageBox messageBox; messageBox.critical(0,"Ошибка", "Шаг должно быть: 2-10");
+            QMessageBox messageBox; messageBox.critical(0,"Ошибка", "Шаг должно быть: 0-1");
             return;
         }
 

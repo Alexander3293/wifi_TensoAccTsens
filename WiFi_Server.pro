@@ -15,7 +15,6 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     qcustomplot.cpp \
-    serialcom.cpp \
     server.cpp
 
 HEADERS += \
@@ -24,7 +23,6 @@ HEADERS += \
     fileprocessing.h \
     mainwindow.h \
     qcustomplot.h \
-    serialcom.h \
     server.h
 
 FORMS += \

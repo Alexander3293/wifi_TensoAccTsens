@@ -73,7 +73,7 @@ private:
     uint32_t counterX=0;
     uint8_t _devNumber;
     uint8_t numDevice;
-
+    QString fileName_;
     uint16_t WidthGraph;
     uint16_t shiftGraph;
     uint8_t g_;

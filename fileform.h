@@ -15,8 +15,8 @@
 
 typedef struct
 {
-    uint begin;         //начало графика
-    uint graphCounter;  //количество точек
+    int32_t beginMeas;         //начало графика
+    int32_t endMeas;  //количество точек
     QVector <uint8_t> modX;
 
 } pointsMeasure_;
