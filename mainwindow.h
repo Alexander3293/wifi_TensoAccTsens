@@ -74,6 +74,7 @@ private:
     uint8_t _devNumber;
     uint8_t numDevice;
     QString fileName_;
+    QString dirToSave_;
     uint16_t WidthGraph;
     uint16_t shiftGraph;
     uint8_t g_;

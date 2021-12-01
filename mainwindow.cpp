@@ -603,6 +603,13 @@ void MainWindow::openFile()
         return;
     }
 
+    dirToSave_ = QFileDialog::getExistingDirectory(this, tr("Open Directory to Save Files"),
+                                                    "/home",
+                                                    QFileDialog::ShowDirsOnly
+                                                    | QFileDialog::DontResolveSymlinks);
+    dirToSave_ = dirToSave_ + "/";
+    qDebug() << "dirToSave" << dirToSave_;
+
     uint8_t dev_num = 0;
     int16_t mes = 0;
     QString tmp;
@@ -614,27 +621,27 @@ void MainWindow::openFile()
     //QFile f_adc1, f_adc2, f_accX, f_accY, f_accZ, f_Tsens;
     for (uint8_t i=0; i < 6;i++) {
         f_adc1.append(new QFile);
-        f_adc1.at(i)->setFileName(QString("ADC1_%1.txt").arg(i));
+        f_adc1.at(i)->setFileName(dirToSave_+ (QString("ADC1_%1.txt").arg(i)));
         f_adc1.at(i)->open(QIODevice::WriteOnly|QIODevice::Text);
 
         f_adc2.append(new QFile);
-        f_adc2.at(i)->setFileName(QString("ADC2_%1.txt").arg(i));
+        f_adc2.at(i)->setFileName(dirToSave_+ (QString("ADC2_%1.txt").arg(i)));
         f_adc2.at(i)->open(QIODevice::WriteOnly|QIODevice::Text);
 
         f_accX.append(new QFile);
-        f_accX.at(i)->setFileName(QString("AccX_%1.txt").arg(i));
+        f_accX.at(i)->setFileName(dirToSave_+ (QString("AccX_%1.txt").arg(i)));
         f_accX.at(i)->open(QIODevice::WriteOnly|QIODevice::Text);
 
         f_accY.append(new QFile);
-        f_accY.at(i)->setFileName(QString("AccY_%1.txt").arg(i));
+        f_accY.at(i)->setFileName(dirToSave_+ (QString("AccY_%1.txt").arg(i)));
         f_accY.at(i)->open(QIODevice::WriteOnly|QIODevice::Text);
 
         f_accZ.append(new QFile);
-        f_accZ.at(i)->setFileName(QString("AccZ_%1.txt").arg(i));
+        f_accZ.at(i)->setFileName(dirToSave_+ (QString("AccZ_%1.txt").arg(i)));
         f_accZ.at(i)->open(QIODevice::WriteOnly|QIODevice::Text);
 
         f_Tsens.append(new QFile);
-        f_Tsens.at(i)->setFileName(QString("Tsens_%1.txt").arg(i));
+        f_Tsens.at(i)->setFileName(dirToSave_+ (QString("Tsens_%1.txt").arg(i)));
         f_Tsens.at(i)->open(QIODevice::WriteOnly|QIODevice::Text);
 
     }
@@ -766,7 +773,6 @@ if (!file_global.open(QFile::ReadOnly|QFile::Text))
     qDebug() << "Ошибка при открытии файла";
     return;
 }
-
     while(!file_global.atEnd()){
         QString text = file_global.read(32);
         if(text.startsWith("ed00ff", Qt::CaseInsensitive)){
@@ -776,7 +782,7 @@ if (!file_global.open(QFile::ReadOnly|QFile::Text))
             tmp = text.mid(8+settingPoint->modX.at(dev_num)*4, 4); //8 - шапка, 4*.. сдвиг необходимого измерения
             mes = (tmp.left(2).toUInt(&ok, 16)) |( tmp.right(2).toUInt(&ok, 16) << 8);
 
-            if(array_graphTmpBegin[dev_num] < (uint32_t)settingPoint->endMeas){
+            if(array_graphTmpBegin[dev_num] < (uint32_t)settingPoint->beginMeas){
                 array_graphTmpBegin[dev_num]++;
                 continue;
             }
@@ -1052,8 +1058,6 @@ QString MainWindow::getTextRadBut(int id)
     }
     return "Error";
 }
-
-
 
 void MainWindow::test_plot()
 {
